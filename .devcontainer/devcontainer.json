@@ -1,17 +1,24 @@
 {
   "name": "Edu Topics App",
-  "features": { "ghcr.io/devcontainers/features/python:1": {} },
-  "postCreateCommand": "pip install -r requirements.txt",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {}
+  },
+  "postCreateCommand": "python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt",
+  "postStartCommand": "bash -lc \"if ! grep -q 'source .venv/bin/activate' ~/.bashrc; then echo 'source .venv/bin/activate' >> ~/.bashrc; fi\"",
   "forwardPorts": [5000],
   "portsAttributes": {
-    "5000": { "label": "Flask", "onAutoForward": "openBrowser" }
+    "5000": { "label": "Flask (app.py)", "onAutoForward": "openBrowser" }
   },
   "customizations": {
     "vscode": {
       "extensions": [
         "ms-python.python",
         "ms-python.vscode-pylance"
-      ]
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "python.terminal.activateEnvironment": true
+      }
     }
   }
 }
