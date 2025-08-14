@@ -8,3 +8,4 @@ plotly
 pyarrow
 openpyxl
 gunicorn
+requests
