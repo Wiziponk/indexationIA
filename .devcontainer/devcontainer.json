@@ -1,0 +1,17 @@
+{
+  "name": "Edu Topics App",
+  "features": { "ghcr.io/devcontainers/features/python:1": {} },
+  "postCreateCommand": "pip install -r requirements.txt",
+  "forwardPorts": [5000],
+  "portsAttributes": {
+    "5000": { "label": "Flask", "onAutoForward": "openBrowser" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+      ]
+    }
+  }
+}
