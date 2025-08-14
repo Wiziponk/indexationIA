@@ -1,0 +1,13 @@
+flask
+openai>=1.40.0
+pandas
+numpy
+scikit-learn
+python-dotenv
+tqdm
+plotly
+pyarrow
+openpyxl
+
+
+

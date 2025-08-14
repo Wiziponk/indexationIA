@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Edu Topics — Results</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    window.__PAYLOAD__ = {{ payload_json | safe }};
+  </script>
+  <!-- Plotly via CDN -->
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
+  <script defer>
+    document.addEventListener("DOMContentLoaded", () => {
+      const payload = window.__PAYLOAD__;
+      const points = payload.points || [];
+      const meta = payload.meta || {};
+
+      // Build a scatter for each cluster
+      const clusters = [...new Set(points.map(p => p.cluster))].sort((a,b)=>a-b);
+      const traces = clusters.map(c => {
+        const pts = points.filter(p => p.cluster === c);
+        return {
+          x: pts.map(p => p.x),
+          y: pts.map(p => p.y),
+          mode: "markers",
+          type: "scattergl",
+          name: `Cluster ${c}`,
+          text: pts.map(p => (p.title || p.id || "")),
+          hovertemplate: "<b>%{text}</b><br>x=%{x:.2f}, y=%{y:.2f}<extra></extra>",
+          marker: { size: 8 }
+        };
+      });
+
+      const layout = {
+        title: `Topic Map — k=${meta.k} ${meta.silhouette >= 0 ? `(silhouette ${meta.silhouette.toFixed(3)})` : ""}`,
+        xaxis: { zeroline: false },
+        yaxis: { zeroline: false },
+        height: 700,
+        hovermode: "closest",
+        margin: { l: 40, r: 10, t: 60, b: 40 }
+      };
+
+      Plotly.newPlot("chart", traces, layout, {displayModeBar: true});
+
+      // Summary table
+      const byCluster = new Map();
+      for (const p of points) {
+        if (!byCluster.has(p.cluster)) byCluster.set(p.cluster, []);
+        byCluster.get(p.cluster).push(p);
+      }
+      const summary = [...byCluster.entries()].map(([cluster, arr]) => ({
+        cluster, count: arr.length
+      })).sort((a,b)=>a.cluster-b.cluster);
+
+      const tbody = document.querySelector("#summary tbody");
+      summary.forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${row.cluster}</td><td>${row.count}</td>`;
+        tbody.appendChild(tr);
+      });
+
+      // Download link
+      const link = document.getElementById("dl");
+      link.href = payload.download.parquet;
+    });
+  </script>
+</head>
+<body>
+  <div class="container">
+    <h1>Results</h1>
+    <div class="actions">
+      <a id="dl" class="button">Download full results (parquet)</a>
+      <a href="{{ url_for('index') }}" class="button secondary">Analyze another file</a>
+    </div>
+    <div id="chart" class="card" style="min-height:700px;"></div>
+
+    <div class="card">
+      <h2>Cluster Summary</h2>
+      <table id="summary" class="table">
+        <thead><tr><th>Cluster</th><th>Items</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <p class="note">
+      Notes: 2D map uses PCA for speed. Clusters are K-Means on embedding vectors.
+      Titles shown in tooltips if a title column was present.
+    </p>
+  </div>
+</body>
+</html>

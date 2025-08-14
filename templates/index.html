@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Edu Topics — Upload</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body>
+  <div class="container">
+    <h1>Edu Topics — Catalog Analyzer</h1>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+      <div class="flash">
+        {% for msg in messages %}
+          <div class="flash-item">{{ msg }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}
+
+    <form action="{{ url_for('ingest') }}" method="post" enctype="multipart/form-data" class="card">
+      <label>Catalog file (CSV or Excel)</label>
+      <input type="file" name="catalog" accept=".csv,.xlsx,.xls" required />
+
+      <label>Base directory for transcript files (optional)</label>
+      <input type="text" name="base_dir" placeholder="e.g., data/transcripts" />
+
+      <label>Number of clusters</label>
+      <select name="k_choice">
+        <option value="auto" selected>Auto (recommend)</option>
+        <option value="4">4</option>
+        <option value="6">6</option>
+        <option value="8">8</option>
+        <option value="10">10</option>
+      </select>
+
+      <button type="submit">Analyze</button>
+    </form>
+
+    <p class="note">
+      Tip: Your file should include either a transcript text column
+      (e.g. <code>transcript_text</code>) or a path column
+      (e.g. <code>transcript_path</code>) pointing to .txt files.
+    </p>
+  </div>
+</body>
+</html>
+
+
