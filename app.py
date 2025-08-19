@@ -1,32 +1,25 @@
-import uuid
 import json
+import subprocess
 import time
+import uuid
 from pathlib import Path
 
-import pandas as pd
 import numpy as np
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
-from sklearn.cluster import KMeans, DBSCAN
+import pandas as pd
+from dotenv import load_dotenv
+from flask import (Flask, flash, jsonify, redirect, render_template, request,
+                   url_for)
+from sklearn.cluster import DBSCAN, KMeans
 
-from indexation.config import (
-    API_BASE,
-    DATA_DIR,
-    TITLE_COL_CANDIDATES,
-    ID_GUESS,
-    SECRET_KEY,
-)
-from indexation.helpers import (
-    discover_fields,
-    ensure_list,
-    fetch_all_programs,
-    build_text_from_fields,
-    batch_embed,
-    auto_kmeans,
-    pca_2d,
-    load_transcripts,
-    get_nested_value,
-    suggest_cluster_names,
-)
+from indexation.config import (API_BASE, DATA_DIR, ID_GUESS, SECRET_KEY,
+                               TITLE_COL_CANDIDATES)
+from indexation.helpers import (auto_kmeans, batch_embed,
+                                build_text_from_fields, discover_fields,
+                                ensure_list, fetch_all_programs,
+                                get_nested_value, load_transcripts, pca_2d,
+                                suggest_cluster_names)
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -50,6 +43,19 @@ def cleanup_previews(max_age=3600):
 # -----------------------------------------------------
 # Landing and common API endpoints
 # -----------------------------------------------------
+
+
+@app.get("/healthz")
+def healthz():
+    try:
+        sha = (
+            subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
+            .decode()
+            .strip()
+        )
+    except Exception:
+        sha = "unknown"
+    return {"ok": True, "version": sha}
 
 
 @app.get("/")
@@ -87,7 +93,9 @@ def api_sample():
 # -----------------------------------------------------
 
 
-def build_dataset(primary_key, embed_fields, mode, excel_token, excel_id_col, transcripts_files):
+def build_dataset(
+    primary_key, embed_fields, mode, excel_token, excel_id_col, transcripts_files
+):
     """Fetch programs, filter and attach transcripts. Returns (df, pk_col)."""
     try:
         programs = fetch_all_programs()
@@ -118,7 +126,9 @@ def build_dataset(primary_key, embed_fields, mode, excel_token, excel_id_col, tr
 
     df = pd.DataFrame(programs)
     if "." in primary_key or primary_key not in df.columns:
-        df["_pk"] = df.apply(lambda r: get_nested_value(r.to_dict(), primary_key), axis=1)
+        df["_pk"] = df.apply(
+            lambda r: get_nested_value(r.to_dict(), primary_key), axis=1
+        )
         pk_col = "_pk"
         if df[pk_col].isna().all():
             raise RuntimeError(f"Primary key '{primary_key}' not found in API data")
@@ -142,7 +152,9 @@ def build_dataset(primary_key, embed_fields, mode, excel_token, excel_id_col, tr
 @app.get("/generate")
 def generate_page():
     fields = discover_fields()
-    return render_template("generate.html", api_base=API_BASE, fields=fields, id_guess=ID_GUESS)
+    return render_template(
+        "generate.html", api_base=API_BASE, fields=fields, id_guess=ID_GUESS
+    )
 
 
 @app.post("/generate/preview")
@@ -157,7 +169,14 @@ def generate_preview():
         return jsonify(error="Missing primary key or fields"), 400
 
     try:
-        df, pk_col = build_dataset(primary_key, embed_fields.copy(), mode, excel_token, excel_id_col, request.files.getlist("transcripts"))
+        df, pk_col = build_dataset(
+            primary_key,
+            embed_fields.copy(),
+            mode,
+            excel_token,
+            excel_id_col,
+            request.files.getlist("transcripts"),
+        )
     except RuntimeError as e:
         return jsonify(error=str(e)), 400
 
@@ -183,12 +202,21 @@ def run_generate():
         return redirect(url_for("generate_page"))
 
     try:
-        df, pk_col = build_dataset(primary_key, embed_fields, mode, excel_token, excel_id_col, request.files.getlist("transcripts"))
+        df, pk_col = build_dataset(
+            primary_key,
+            embed_fields,
+            mode,
+            excel_token,
+            excel_id_col,
+            request.files.getlist("transcripts"),
+        )
     except RuntimeError as e:
         flash(str(e))
         return redirect(url_for("generate_page"))
 
-    texts = [build_text_from_fields(row.to_dict(), embed_fields) for _, row in df.iterrows()]
+    texts = [
+        build_text_from_fields(row.to_dict(), embed_fields) for _, row in df.iterrows()
+    ]
     df["_text_for_embedding"] = texts
     df = df[df["_text_for_embedding"].astype(str).str.strip() != ""]
     if df.empty:
@@ -350,10 +378,11 @@ def preview_excel():
 
 @app.get("/download/<name>")
 def download_result(name):
-    from flask import send_from_directory, abort
+    from flask import abort, send_from_directory
 
     candidate = DATA_DIR / name
-    if not candidate.exists() or not candidate.name.endswith(tuple([".parquet", ".npy"])):
+    if not candidate.exists() or not candidate.name.endswith(
+        tuple([".parquet", ".npy"])
+    ):
         abort(404)
     return send_from_directory(DATA_DIR, candidate.name, as_attachment=True)
-
