@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, DBSCAN
 
 from indexation.config import (
     API_BASE,
@@ -22,6 +22,8 @@ from indexation.helpers import (
     batch_embed,
     auto_kmeans,
     pca_2d,
+    load_transcripts,
+    get_nested_value,
 )
 
 app = Flask(__name__)
@@ -70,6 +72,7 @@ def ingest():
     primary_key = request.form.get("primary_key", "").strip()
     embed_fields = ensure_list(request.form.getlist("embed_fields"))
     k_choice = request.form.get("k_choice", "auto").strip()
+    algo_choice = request.form.get("algo_choice", "kmeans").strip()
 
     if not primary_key:
         flash("Please choose a primary key from the API fields.")
@@ -113,42 +116,69 @@ def ingest():
         wanted_ids = set(df_ids[excel_id_col].astype(str).str.strip().tolist())
 
     df = pd.DataFrame(programs)
-    if primary_key not in df.columns:
-        flash(f"Primary key '{primary_key}' not found in API data.")
-        return redirect(url_for("home"))
+
+    if "." in primary_key or primary_key not in df.columns:
+        df["_pk"] = df.apply(lambda r: get_nested_value(r.to_dict(), primary_key), axis=1)
+        pk_col = "_pk"
+        if df[pk_col].isna().all():
+            flash(f"Primary key '{primary_key}' not found in API data.")
+            return redirect(url_for("home"))
+    else:
+        pk_col = primary_key
 
     if wanted_ids is not None:
-        df = df[df[primary_key].astype(str).str.strip().isin(wanted_ids)].copy()
+        df = df[df[pk_col].astype(str).str.strip().isin(wanted_ids)].copy()
         if df.empty:
             flash("None of the provided IDs matched the API data.")
             return redirect(url_for("home"))
 
-    texts = []
-    for _, row in df.iterrows():
-        texts.append(build_text_from_fields(row.to_dict(), embed_fields))
-    df["_text_for_embedding"] = texts
-    df = df[df["_text_for_embedding"].astype(str).str.strip() != ""]
-    if df.empty:
-        flash("Nothing to embed after field selection. Check your embed fields.")
-        return redirect(url_for("home"))
+    transcripts_map = load_transcripts(request.files.getlist("transcripts"))
+    if transcripts_map:
+        df["transcript_text"] = df[pk_col].astype(str).map(transcripts_map).fillna("")
+        if "transcript_text" not in embed_fields:
+            embed_fields.append("transcript_text")
 
-    try:
-        embs = batch_embed(df["_text_for_embedding"].tolist())
-    except Exception as e:
-        flash(f"Embedding error: {e}")
-        return redirect(url_for("home"))
-    X = np.vstack(embs)
-
-    if k_choice == "auto":
-        k, sil, labels = auto_kmeans(X)
+    emb_file = request.files.get("embedding_file")
+    if emb_file and emb_file.filename:
+        tmp_emb = DATA_DIR / f"upload_emb_{uuid.uuid4().hex}.npy"
+        emb_file.save(tmp_emb)
+        X = np.load(tmp_emb)
+        if X.shape[0] != len(df):
+            flash("Embedding file size mismatch with API data.")
+            return redirect(url_for("home"))
     else:
+        texts = []
+        for _, row in df.iterrows():
+            texts.append(build_text_from_fields(row.to_dict(), embed_fields))
+        df["_text_for_embedding"] = texts
+        df = df[df["_text_for_embedding"].astype(str).str.strip() != ""]
+        if df.empty:
+            flash("Nothing to embed after field selection. Check your embed fields.")
+            return redirect(url_for("home"))
+
         try:
-            k = int(k_choice)
-            km = KMeans(n_clusters=k, n_init="auto", random_state=42)
-            labels = km.fit_predict(X)
-            sil = -1
-        except Exception:
+            embs = batch_embed(df["_text_for_embedding"].tolist())
+        except Exception as e:
+            flash(f"Embedding error: {e}")
+            return redirect(url_for("home"))
+        X = np.vstack(embs)
+
+    if algo_choice == "dbscan":
+        db = DBSCAN()
+        labels = db.fit_predict(X)
+        k = len(set(labels)) - (1 if -1 in labels else 0)
+        sil = -1
+    else:
+        if k_choice == "auto":
             k, sil, labels = auto_kmeans(X)
+        else:
+            try:
+                k = int(k_choice)
+                km = KMeans(n_clusters=k, n_init="auto", random_state=42)
+                labels = km.fit_predict(X)
+                sil = -1
+            except Exception:
+                k, sil, labels = auto_kmeans(X)
 
     coords = pca_2d(X)
     df["_cluster"] = labels
@@ -159,6 +189,8 @@ def ingest():
     out_name = f"result_{uid}.parquet"
     out_path = DATA_DIR / out_name
     df.to_parquet(out_path, index=False)
+    emb_name = f"emb_{uid}.npy"
+    np.save(DATA_DIR / emb_name, X)
 
     title_col = next((c for c in TITLE_COL_CANDIDATES if c in df.columns), None)
 
@@ -170,10 +202,11 @@ def ingest():
             "primary_key": primary_key,
             "embed_fields": embed_fields,
             "mode": mode,
+            "algo": algo_choice,
         },
         "points": [
             {
-                "id": str(row[primary_key]),
+                "id": str(row[pk_col]),
                 "title": str(row[title_col]) if title_col else "",
                 "cluster": int(row["_cluster"]),
                 "x": float(row["_x"]),
@@ -182,7 +215,10 @@ def ingest():
             for _, row in df.iterrows()
         ],
         "columns": {"id": primary_key, "title": title_col},
-        "download": {"parquet": url_for("download_result", name=out_name)},
+        "download": {
+            "parquet": url_for("download_result", name=out_name),
+            "embeddings": url_for("download_result", name=emb_name),
+        },
     }
 
     return render_template("results.html", payload_json=json.dumps(payload))
@@ -193,6 +229,6 @@ def download_result(name):
     from flask import send_from_directory, abort
 
     candidate = DATA_DIR / name
-    if not candidate.exists() or not candidate.name.endswith(".parquet"):
+    if not candidate.exists() or not candidate.name.endswith(tuple([".parquet", ".npy"])):
         abort(404)
     return send_from_directory(DATA_DIR, candidate.name, as_attachment=True)

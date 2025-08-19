@@ -14,7 +14,7 @@ DATA_DIR.mkdir(exist_ok=True)
 # External services
 API_BASE = os.getenv("EDUC_API_BASE", "https://educ.arte.tv/api/list/programs")
 API_TOKEN = os.getenv("EDUC_API_TOKEN")
-TIMEOUT = 20
+TIMEOUT = 60
 
 # Embeddings
 EMBED_MODEL = "text-embedding-3-small"

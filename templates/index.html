@@ -91,38 +91,57 @@
     </div>
   </div>
 
-  <!-- STEP 3: Clustering controls + submit -->
-  <div class="step">
-    <h5 class="mb-2">Étape 3 — Clustering</h5>
-    <div class="row g-2">
-      <div class="col-md-3">
-        <label class="form-label">Nombre de clusters</label>
-        <select id="kChoice" class="form-select form-select-sm">
-          <option value="auto" selected>Auto (recommandé)</option>
-          <option value="4">4</option>
-          <option value="6">6</option>
-          <option value="8">8</option>
-          <option value="10">10</option>
-        </select>
+    <!-- STEP 3: Clustering options -->
+    <div class="step">
+      <h5 class="mb-2">Étape 3 — Clustering</h5>
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label">Nombre de clusters</label>
+          <select id="kChoice" class="form-select form-select-sm">
+            <option value="auto" selected>Auto (recommandé)</option>
+            <option value="4">4</option>
+            <option value="6">6</option>
+            <option value="8">8</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Algorithme</label>
+          <select id="algoChoice" class="form-select form-select-sm">
+            <option value="kmeans" selected>K-Means</option>
+            <option value="dbscan">DBSCAN</option>
+          </select>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- STEP 4: Go -->
-  <div class="step">
-    <form id="runForm" method="post" action="{{ url_for('ingest') }}" enctype="multipart/form-data">
-      <input type="hidden" name="mode" id="f_mode" value="api">
-      <input type="hidden" name="primary_key" id="f_primary_key">
-      <input type="hidden" name="k_choice" id="f_k_choice" value="auto">
-      <div id="embedHidden"></div>
-      <input type="hidden" name="excel_token" id="f_excel_token">
-      <input type="hidden" name="excel_id_col" id="f_excel_id_col">
+    <!-- STEP 4: Optional files + submit -->
+    <div class="step">
+      <h5 class="mb-2">Étape 4 — Fichiers optionnels & lancement</h5>
+      <form id="runForm" method="post" action="{{ url_for('ingest') }}" enctype="multipart/form-data">
+        <input type="hidden" name="mode" id="f_mode" value="api">
+        <input type="hidden" name="primary_key" id="f_primary_key">
+        <input type="hidden" name="k_choice" id="f_k_choice" value="auto">
+        <input type="hidden" name="algo_choice" id="f_algo_choice" value="kmeans">
+        <div id="embedHidden"></div>
+        <input type="hidden" name="excel_token" id="f_excel_token">
+        <input type="hidden" name="excel_id_col" id="f_excel_id_col">
 
-      <button id="btnRun" class="btn btn-primary">Analyser</button>
-      <span id="runSpinner" class="ms-2 d-none spinner-border spinner-border-sm"></span>
-    </form>
-    <div class="muted mt-2">Le traitement peut prendre un peu de temps selon la taille.</div>
-  </div>
+        <div class="mb-3">
+          <label class="form-label">Transcriptions (.docx)</label>
+          <input type="file" name="transcripts" id="transcripts" class="form-control form-control-sm" multiple accept=".docx" />
+          <div class="form-text text-secondary">Les noms doivent contenir l’identifiant numérique (ex: AUTHOR_123456.docx).</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Embeddings pré-générés (.npy)</label>
+          <input type="file" name="embedding_file" id="embeddingFile" class="form-control form-control-sm" accept=".npy" />
+        </div>
+
+        <button id="btnRun" class="btn btn-primary">Analyser</button>
+        <span id="runSpinner" class="ms-2 d-none spinner-border spinner-border-sm"></span>
+      </form>
+      <div class="muted mt-2">Le traitement peut prendre un peu de temps selon la taille.</div>
+    </div>
 
 </div>
 
@@ -240,12 +259,13 @@ $("#excelPreviewForm").addEventListener("submit", async (e) => {
 });
 
 // Submit run
-$("#runForm").addEventListener("submit", (e) => {
-  // move UI selections into hidden fields
-  const mode = $("#modeExcel").checked ? "excel" : "api";
-  $("#f_mode").value = mode;
-  $("#f_primary_key").value = $("#primaryKey").value;
-  $("#f_k_choice").value = $("#kChoice").value;
+  $("#runForm").addEventListener("submit", (e) => {
+    // move UI selections into hidden fields
+    const mode = $("#modeExcel").checked ? "excel" : "api";
+    $("#f_mode").value = mode;
+    $("#f_primary_key").value = $("#primaryKey").value;
+    $("#f_k_choice").value = $("#kChoice").value;
+    $("#f_algo_choice").value = $("#algoChoice").value;
 
   // embed fields
   const wrap = $("#embedHidden");
@@ -258,11 +278,11 @@ $("#runForm").addEventListener("submit", (e) => {
     wrap.appendChild(inp);
   });
 
-  if (mode === "excel") {
-    if (!excelToken) { e.preventDefault(); alert("Prévisualiser d’abord le fichier Excel."); return; }
-    $("#f_excel_token").value = excelToken;
-    $("#f_excel_id_col").value = $("#excelIdCol").value;
-  }
+    if (mode === "excel") {
+      if (!excelToken) { e.preventDefault(); alert("Prévisualiser d’abord le fichier Excel."); return; }
+      $("#f_excel_token").value = excelToken;
+      $("#f_excel_id_col").value = $("#excelIdCol").value;
+    }
 
   $("#btnRun").classList.add("disabled");
   $("#runSpinner").classList.remove("d-none");

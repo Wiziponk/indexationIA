@@ -1,7 +1,10 @@
 import json
+import re
 import requests
 import pandas as pd
 import numpy as np
+from pathlib import Path
+from docx import Document
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
@@ -93,7 +96,14 @@ def discover_fields():
 
         if not isinstance(sample, dict):
             return []
-        return sorted(sample.keys())
+
+        fields = set()
+        for k, v in sample.items():
+            fields.add(k)
+            if isinstance(v, dict):
+                for sk in v.keys():
+                    fields.add(f"{k}.{sk}")
+        return sorted(fields)
     except Exception:
         return []
 
@@ -108,10 +118,19 @@ def ensure_list(val):
     return [val]
 
 
+def get_nested_value(d, path):
+    for part in path.split('.'):
+        if isinstance(d, dict):
+            d = d.get(part, "")
+        else:
+            return ""
+    return d
+
+
 def build_text_from_fields(row, fields):
     parts = []
     for f in fields:
-        v = row.get(f, "")
+        v = get_nested_value(row, f)
         if isinstance(v, (list, dict)):
             v = json.dumps(v, ensure_ascii=False)
         parts.append(str(v))
@@ -147,3 +166,21 @@ def auto_kmeans(X, k_min=4, k_max=10):
 def pca_2d(X):
     p = PCA(n_components=2, random_state=42)
     return p.fit_transform(X)
+
+
+def load_transcripts(files, pattern=r"(\d+)"):
+    transcripts = {}
+    for fs in files:
+        name = Path(fs.filename or "").name
+        m = re.search(pattern, name)
+        if not m:
+            continue
+        key = m.group(1)
+        try:
+            fs.stream.seek(0)
+            doc = Document(fs.stream)
+            text = "\n".join(p.text for p in doc.paragraphs)
+            transcripts[key] = text
+        except Exception:
+            continue
+    return transcripts

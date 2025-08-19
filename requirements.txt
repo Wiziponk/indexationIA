@@ -10,3 +10,4 @@ openpyxl
 gunicorn
 requests
 dotenv
+python-docx
