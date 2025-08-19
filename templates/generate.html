@@ -102,7 +102,7 @@
   <!-- STEP 4: Preview & generation -->
   <div class="step">
     <h5 class="mb-2">Étape 4 — Prévisualisation & génération</h5>
-    <form id="generateForm" method="post" action="{{ url_for('run_generate') }}" enctype="multipart/form-data">
+    <form id="generateForm" method="post" action="{{ url_for('generate.run_generate') }}" enctype="multipart/form-data">
       <input type="hidden" name="mode" id="f_mode" value="api">
       <input type="hidden" name="primary_key" id="f_primary_key">
       <div id="embedHidden"></div>
@@ -156,7 +156,7 @@ async function updateEmbedPreview() {
   }
   try {
     const params = new URLSearchParams({ primary_key: pk, fields: fields.join(",") });
-    const res = await fetch(`{{ url_for('api_sample') }}?${params.toString()}`);
+    const res = await fetch(`{{ url_for('common.api_sample') }}?${params.toString()}`);
     const js = await res.json();
     if (!js.sample) { return; }
     let html = `<div><strong>${pk}</strong>: ${js.sample[pk] ?? ''}</div>`;
@@ -195,7 +195,7 @@ function showFieldsRow(show) {
 document.getElementById("btnLoadFields").addEventListener("click", async () => {
   setLoading("#btnLoadFields", "#loadSpinner", true);
   try {
-    const res = await fetch("{{ url_for('api_fields') }}");
+    const res = await fetch("{{ url_for('common.api_fields') }}");
     const js = await res.json();
     if (js.fields && js.fields.length) {
       populateFields(js.fields);
@@ -243,7 +243,7 @@ $("#excelPreviewForm").addEventListener("submit", async (e) => {
   fd.append("excel", file);
   setLoading("#btnPreview", "#excelSpinner", true);
   try {
-    const res = await fetch("{{ url_for('preview_excel') }}", { method: "POST", body: fd });
+    const res = await fetch("{{ url_for('common.preview_excel') }}", { method: "POST", body: fd });
     const js = await res.json();
     if (js.error) { alert(js.error); return; }
     excelToken = js.token;
@@ -317,7 +317,7 @@ $("#btnDataPreview").addEventListener("click", async () => {
   Array.from($("#transcripts").files).forEach(f => fd.append("transcripts", f));
   setLoading("#btnDataPreview", "#dataSpinner", true);
   try {
-    const res = await fetch("{{ url_for('generate_preview') }}", { method: "POST", body: fd });
+    const res = await fetch("{{ url_for('generate.generate_preview') }}", { method: "POST", body: fd });
     const js = await res.json();
     if (js.error) { alert(js.error); return; }
     const head = $("#dataPreview thead"); head.innerHTML = "";
