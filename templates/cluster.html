@@ -18,7 +18,7 @@
     {% endif %}
   {% endwith %}
 
-  <form method="post" action="{{ url_for('run_cluster') }}" enctype="multipart/form-data" class="step">
+  <form method="post" action="{{ url_for('cluster.run_cluster') }}" enctype="multipart/form-data" class="step">
     <h5 class="mb-2">Données</h5>
     {% if existing %}
       <div class="mb-3">
