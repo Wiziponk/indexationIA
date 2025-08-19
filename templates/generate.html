@@ -99,59 +99,38 @@
     <div id="embedPreviewContent" class="small"></div>
   </div>
 
-  <h2 class="mt-4">Clustering</h2>
+  <!-- STEP 4: Preview & generation -->
+  <div class="step">
+    <h5 class="mb-2">Étape 4 — Prévisualisation & génération</h5>
+    <form id="generateForm" method="post" action="{{ url_for('run_generate') }}" enctype="multipart/form-data">
+      <input type="hidden" name="mode" id="f_mode" value="api">
+      <input type="hidden" name="primary_key" id="f_primary_key">
+      <div id="embedHidden"></div>
+      <input type="hidden" name="excel_token" id="f_excel_token">
+      <input type="hidden" name="excel_id_col" id="f_excel_id_col">
 
-    <!-- STEP 4: Clustering options -->
-    <div class="step">
-      <h5 class="mb-2">Étape 4 — Options de clustering</h5>
-      <div class="row g-2">
-        <div class="col-md-3">
-          <label class="form-label">Nombre de clusters</label>
-          <select id="kChoice" class="form-select form-select-sm">
-            <option value="auto" selected>Auto (recommandé)</option>
-            <option value="4">4</option>
-            <option value="6">6</option>
-            <option value="8">8</option>
-            <option value="10">10</option>
-          </select>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Algorithme</label>
-          <select id="algoChoice" class="form-select form-select-sm">
-            <option value="kmeans" selected>K-Means</option>
-            <option value="dbscan">DBSCAN</option>
-          </select>
-        </div>
+      <div class="mb-3">
+        <label class="form-label">Transcriptions (.docx)</label>
+        <input type="file" name="transcripts" id="transcripts" class="form-control form-control-sm" multiple accept=".docx" />
+        <div class="form-text text-secondary">Les noms doivent contenir l’identifiant numérique (ex: AUTHOR_123456.docx).</div>
       </div>
-    </div>
 
-    <!-- STEP 5: Optional files + submit -->
-    <div class="step">
-      <h5 class="mb-2">Étape 5 — Fichiers optionnels & lancement</h5>
-      <form id="runForm" method="post" action="{{ url_for('ingest') }}" enctype="multipart/form-data">
-        <input type="hidden" name="mode" id="f_mode" value="api">
-        <input type="hidden" name="primary_key" id="f_primary_key">
-        <input type="hidden" name="k_choice" id="f_k_choice" value="auto">
-        <input type="hidden" name="algo_choice" id="f_algo_choice" value="kmeans">
-        <div id="embedHidden"></div>
-        <input type="hidden" name="excel_token" id="f_excel_token">
-        <input type="hidden" name="excel_id_col" id="f_excel_id_col">
+      <button id="btnDataPreview" type="button" class="btn btn-secondary btn-sm">Prévisualiser les émissions</button>
+      <span id="dataSpinner" class="ms-2 d-none spinner-border spinner-border-sm"></span>
+      <div id="dataPreview" class="table-preview mt-3 d-none">
+        <table class="table table-dark table-striped table-sm">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
 
-        <div class="mb-3">
-          <label class="form-label">Transcriptions (.docx)</label>
-          <input type="file" name="transcripts" id="transcripts" class="form-control form-control-sm" multiple accept=".docx" />
-          <div class="form-text text-secondary">Les noms doivent contenir l’identifiant numérique (ex: AUTHOR_123456.docx).</div>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Embeddings pré-générés (.npy)</label>
-          <input type="file" name="embedding_file" id="embeddingFile" class="form-control form-control-sm" accept=".npy" />
-        </div>
-
-        <button id="btnRun" class="btn btn-primary">Analyser</button>
+      <div class="mt-3">
+        <button id="btnRun" class="btn btn-primary">Générer</button>
         <span id="runSpinner" class="ms-2 d-none spinner-border spinner-border-sm"></span>
-      </form>
-      <div class="muted mt-2">Le traitement peut prendre un peu de temps selon la taille.</div>
-    </div>
+      </div>
+    </form>
+    <div class="muted mt-2">Le traitement peut prendre un peu de temps selon la taille.</div>
+  </div>
 
 </div>
 
@@ -297,16 +276,12 @@ $("#excelPreviewForm").addEventListener("submit", async (e) => {
   }
 });
 
-// Submit run
-  $("#runForm").addEventListener("submit", (e) => {
-    // move UI selections into hidden fields
-    const mode = $("#modeExcel").checked ? "excel" : "api";
-    $("#f_mode").value = mode;
-    $("#f_primary_key").value = $("#primaryKey").value;
-    $("#f_k_choice").value = $("#kChoice").value;
-    $("#f_algo_choice").value = $("#algoChoice").value;
+// Submit generation
+$("#generateForm").addEventListener("submit", (e) => {
+  const mode = $("#modeExcel").checked ? "excel" : "api";
+  $("#f_mode").value = mode;
+  $("#f_primary_key").value = $("#primaryKey").value;
 
-  // embed fields
   const wrap = $("#embedHidden");
   wrap.innerHTML = "";
   Array.from($("#embedFields").selectedOptions).forEach(o => {
@@ -317,14 +292,54 @@ $("#excelPreviewForm").addEventListener("submit", async (e) => {
     wrap.appendChild(inp);
   });
 
-    if (mode === "excel") {
-      if (!excelToken) { e.preventDefault(); alert("Prévisualiser d’abord le fichier Excel."); return; }
-      $("#f_excel_token").value = excelToken;
-      $("#f_excel_id_col").value = $("#excelIdCol").value;
-    }
+  if (mode === "excel") {
+    if (!excelToken) { e.preventDefault(); alert("Prévisualiser d’abord le fichier Excel."); return; }
+    $("#f_excel_token").value = excelToken;
+    $("#f_excel_id_col").value = $("#excelIdCol").value;
+  }
 
   $("#btnRun").classList.add("disabled");
   $("#runSpinner").classList.remove("d-none");
+});
+
+// Data preview
+$("#btnDataPreview").addEventListener("click", async () => {
+  const mode = $("#modeExcel").checked ? "excel" : "api";
+  const fd = new FormData();
+  fd.append("mode", mode);
+  fd.append("primary_key", $("#primaryKey").value);
+  Array.from($("#embedFields").selectedOptions).forEach(o => fd.append("embed_fields", o.value));
+  if (mode === "excel") {
+    if (!excelToken) { alert("Prévisualiser d’abord le fichier Excel."); return; }
+    fd.append("excel_token", excelToken);
+    fd.append("excel_id_col", $("#excelIdCol").value);
+  }
+  Array.from($("#transcripts").files).forEach(f => fd.append("transcripts", f));
+  setLoading("#btnDataPreview", "#dataSpinner", true);
+  try {
+    const res = await fetch("{{ url_for('generate_preview') }}", { method: "POST", body: fd });
+    const js = await res.json();
+    if (js.error) { alert(js.error); return; }
+    const head = $("#dataPreview thead"); head.innerHTML = "";
+    const body = $("#dataPreview tbody"); body.innerHTML = "";
+    if (js.rows && js.rows.length) {
+      const cols = Object.keys(js.rows[0]);
+      const trh = document.createElement("tr");
+      cols.forEach(c => { const th = document.createElement("th"); th.textContent = c; trh.appendChild(th); });
+      head.appendChild(trh);
+      js.rows.forEach(r => {
+        const tr = document.createElement("tr");
+        cols.forEach(c => { const td = document.createElement("td"); td.textContent = r[c]; tr.appendChild(td); });
+        body.appendChild(tr);
+      });
+      $("#dataPreview").classList.remove("d-none");
+    }
+  } catch (e) {
+    console.error(e);
+    alert("Erreur de prévisualisation des émissions.");
+  } finally {
+    setLoading("#btnDataPreview", "#dataSpinner", false);
+  }
 });
 </script>
 
