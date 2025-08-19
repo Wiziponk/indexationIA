@@ -53,6 +53,7 @@
         span.textContent = f;
         ef.appendChild(span);
       });
+      document.getElementById("summaryAlgo").textContent = meta.algo || "";
 
       // Build cluster counts
       const byCluster = new Map();
@@ -71,6 +72,8 @@
       });
 
       document.getElementById("dl").href = payload.download.parquet;
+      document.getElementById("dlEmb").href = payload.download.embeddings;
+      document.getElementById("footerMeta").textContent = `Projection 2D: PCA | Clustering: ${(meta.algo || '').toUpperCase()} sur embeddings OpenAI.`;
     });
   </script>
 </head>
@@ -80,6 +83,7 @@
       <h1 class="mb-0">Résultats</h1>
       <div class="d-flex gap-2">
         <a id="dl" class="btn btn-primary">Télécharger le Parquet</a>
+        <a id="dlEmb" class="btn btn-secondary">Télécharger Embeddings</a>
         <a href="{{ url_for('home') }}" class="btn btn-outline-light">Nouvelle analyse</a>
       </div>
     </div>
@@ -90,6 +94,7 @@
           <div><span class="text-secondary">Mode:</span> <strong id="summaryMode"></strong></div>
           <div><span class="text-secondary">Clé primaire:</span> <code id="summaryPK"></code></div>
           <div class="mt-1"><span class="text-secondary">Champs d’embedding:</span> <span id="summaryFields"></span></div>
+          <div><span class="text-secondary">Algorithme:</span> <code id="summaryAlgo"></code></div>
         </div>
       </div>
     </div>
@@ -104,7 +109,7 @@
       </table>
     </div>
 
-    <div class="text-secondary small">Projection 2D: PCA | Clustering: K-Means sur embeddings OpenAI.</div>
+    <div class="text-secondary small" id="footerMeta"></div>
   </div>
 </body>
 </html>
