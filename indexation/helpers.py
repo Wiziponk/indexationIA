@@ -184,3 +184,37 @@ def load_transcripts(files, pattern=r"(\d+)"):
         except Exception:
             continue
     return transcripts
+
+
+def suggest_cluster_names(df, title_col, cluster_col="_cluster", max_titles=5):
+    """Use chat completion to suggest a short name for each cluster."""
+    names = {}
+    if title_col not in df.columns:
+        return names
+    for cl, sub in df.groupby(cluster_col):
+        titles = (
+            sub[title_col]
+            .dropna()
+            .astype(str)
+            .head(max_titles)
+            .tolist()
+        )
+        if not titles:
+            continue
+        prompt = (
+            "Voici quelques titres d’éléments appartenant au même cluster : "
+            + "; ".join(titles)
+            + ". Donne un nom de thème très court en français."
+        )
+        try:
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Tu aides à nommer des clusters."},
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            names[int(cl)] = resp.choices[0].message.content.strip()
+        except Exception:
+            continue
+    return names
