@@ -30,6 +30,8 @@
     {% endif %}
   {% endwith %}
 
+  <h2 class="mt-4">Génération d’embeddings</h2>
+
   <!-- STEP 1: API connection & fields -->
   <div class="step">
     <h5 class="mb-2">Étape 1 — Source API</h5>
@@ -91,9 +93,17 @@
     </div>
   </div>
 
-    <!-- STEP 3: Clustering options -->
+  <!-- STEP 3: Embedding preview -->
+  <div id="embedPreview" class="step d-none">
+    <h5 class="mb-2">Étape 3 — Aperçu de l’embedding</h5>
+    <div id="embedPreviewContent" class="small"></div>
+  </div>
+
+  <h2 class="mt-4">Clustering</h2>
+
+    <!-- STEP 4: Clustering options -->
     <div class="step">
-      <h5 class="mb-2">Étape 3 — Clustering</h5>
+      <h5 class="mb-2">Étape 4 — Options de clustering</h5>
       <div class="row g-2">
         <div class="col-md-3">
           <label class="form-label">Nombre de clusters</label>
@@ -115,9 +125,9 @@
       </div>
     </div>
 
-    <!-- STEP 4: Optional files + submit -->
+    <!-- STEP 5: Optional files + submit -->
     <div class="step">
-      <h5 class="mb-2">Étape 4 — Fichiers optionnels & lancement</h5>
+      <h5 class="mb-2">Étape 5 — Fichiers optionnels & lancement</h5>
       <form id="runForm" method="post" action="{{ url_for('ingest') }}" enctype="multipart/form-data">
         <input type="hidden" name="mode" id="f_mode" value="api">
         <input type="hidden" name="primary_key" id="f_primary_key">
@@ -156,6 +166,31 @@ function setLoading(btnId, spinnerId, on) {
   if (!btn || !sp) return;
   if (on) { btn.classList.add('loading'); sp.classList.remove('d-none'); }
   else { btn.classList.remove('loading'); sp.classList.add('d-none'); }
+}
+
+async function updateEmbedPreview() {
+  const pk = $("#primaryKey").value;
+  const fields = Array.from($("#embedFields").selectedOptions).map(o => o.value);
+  if (!pk || !fields.length) {
+    $("#embedPreview").classList.add("d-none");
+    return;
+  }
+  try {
+    const params = new URLSearchParams({ primary_key: pk, fields: fields.join(",") });
+    const res = await fetch(`{{ url_for('api_sample') }}?${params.toString()}`);
+    const js = await res.json();
+    if (!js.sample) { return; }
+    let html = `<div><strong>${pk}</strong>: ${js.sample[pk] ?? ''}</div>`;
+    fields.forEach(f => { html += `<div><strong>${f}</strong>: ${js.sample[f] ?? ''}</div>`; });
+    const tnames = Array.from($("#transcripts").files).map(f => f.name);
+    if (tnames.length) {
+      html += `<div class=\"mt-2\"><strong>Transcriptions</strong>: ${tnames.join(", ")}</div>`;
+    }
+    $("#embedPreviewContent").innerHTML = html;
+    $("#embedPreview").classList.remove("d-none");
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 function populateFields(fields) {
@@ -207,6 +242,10 @@ document.getElementById("btnLoadFields").addEventListener("click", async () => {
     setLoading("#btnLoadFields", "#loadSpinner", false);
   }
 });
+
+$("#primaryKey").addEventListener("change", updateEmbedPreview);
+$("#embedFields").addEventListener("change", updateEmbedPreview);
+$("#transcripts").addEventListener("change", updateEmbedPreview);
 
 // Toggle Excel zone
 $$('input[name="mode"]').forEach(r => {

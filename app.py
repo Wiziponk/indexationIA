@@ -1,5 +1,6 @@
 import uuid
 import json
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -29,6 +30,21 @@ from indexation.helpers import (
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
+# token -> {"path": Path, "ts": float}
+PREVIEW_INDEX = {}
+
+
+def cleanup_previews(max_age=3600):
+    """Remove preview files older than max_age seconds."""
+    now = time.time()
+    for token, info in list(PREVIEW_INDEX.items()):
+        if now - info["ts"] > max_age:
+            try:
+                info["path"].unlink(missing_ok=True)
+            except Exception:
+                pass
+            PREVIEW_INDEX.pop(token, None)
+
 
 @app.get("/")
 def home():
@@ -42,12 +58,33 @@ def api_fields():
     return jsonify(fields=fields, api_base=API_BASE)
 
 
+@app.get("/api/sample")
+def api_sample():
+    pk = request.args.get("primary_key", "").strip()
+    fields = ensure_list(request.args.get("fields", "").split(","))
+    try:
+        programs = fetch_all_programs(max_pages=1)
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+    if not programs:
+        return jsonify(error="No data"), 404
+    sample = programs[0]
+    out = {}
+    if pk:
+        out[pk] = get_nested_value(sample, pk)
+    for f in fields:
+        out[f] = get_nested_value(sample, f)
+    return jsonify(sample=out)
+
+
 @app.post("/preview-excel")
 def preview_excel():
+    cleanup_previews()
     f = request.files.get("excel")
     if not f or f.filename == "":
         return jsonify(error="No file uploaded"), 400
-    tmp = DATA_DIR / f"preview_{uuid.uuid4().hex}{Path(f.filename).suffix}"
+    token = uuid.uuid4().hex
+    tmp = DATA_DIR / f"preview_{token}{Path(f.filename).suffix}"
     f.save(tmp)
     try:
         if tmp.suffix.lower() in [".xlsx", ".xls"]:
@@ -59,15 +96,17 @@ def preview_excel():
 
     preview = df.head(50)
     cols = list(df.columns)
+    PREVIEW_INDEX[token] = {"path": tmp, "ts": time.time()}
     return jsonify(
         columns=cols,
         preview=preview.to_dict(orient="records"),
-        token=str(tmp.name),
+        token=token,
     )
 
 
 @app.post("/ingest")
 def ingest():
+    cleanup_previews()
     mode = request.form.get("mode", "api")
     primary_key = request.form.get("primary_key", "").strip()
     embed_fields = ensure_list(request.form.getlist("embed_fields"))
@@ -99,15 +138,21 @@ def ingest():
             flash("Excel filter selected but missing file preview token or ID column.")
             return redirect(url_for("home"))
 
-        tmp = Path(token)
-        if not tmp.exists():
+        info = PREVIEW_INDEX.pop(token, None)
+        if not info or not info["path"].exists():
             flash("Uploaded Excel token expired; please re-upload.")
             return redirect(url_for("home"))
 
+        tmp = info["path"]
         if tmp.suffix.lower() in [".xlsx", ".xls"]:
             df_ids = pd.read_excel(tmp)
         else:
             df_ids = pd.read_csv(tmp)
+
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
 
         if excel_id_col not in df_ids.columns:
             flash("Chosen ID column not found in uploaded file.")
