@@ -1,44 +1,26 @@
-# Embeddings & Clustering (FastAPI + React)
+# Indexation v2 (API-first + Single-page UI)
 
-A production-ready scaffold that preserves the public contract of the previous app while improving UX and robustness.
+A clean-room rewrite with the same functional inputs/outputs as your original app:
+- **Generates** `data/raw_<uid>.parquet` (rows + `_text_for_embedding`) and `data/emb_<uid>.npy` (embeddings)
+- **Clusters** (K-Means auto-k or DBSCAN), **projects** to 2D (PCA or t-SNE), **names clusters**, and lets you **download** results
 
-## Quick start (dev)
+## Quickstart
 
-1. Copy `backend/.env.example` to `.env` and fill `OPENAI_API_KEY`. Optionally set `API_BASE`.
-2. Run:
-   ```bash
-   docker-compose up --build
-   ```
-3. Open the UI: http://localhost:5173
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 
-## Public endpoints preserved
+# Configure your API and OpenAI
+export OPENAI_API_KEY=sk-...
+export EDUC_API_BASE="https://educ.arte.tv/api/list/programs"
+# optional: export EDUC_API_TOKEN="..."
 
-- `GET /` – app info
-- `GET /healthz` – readiness
-- `GET /api/fields` – enumerate source fields
-- `GET /api/sample` – sample rows
-- `POST /preview-excel` – Excel/CSV preview → `{ token, columns, head }`
-- `GET /download/<name>` – download artifacts
-- `POST /generate/preview` – preview how text will be built
-- `POST /generate` – synchronous (waits for job and returns)
-- `POST /cluster` – synchronous (waits for job and returns)
+# Run
+uvicorn app.main:app --reload --port 5000
+```
 
-## Background jobs (new, used by the new UI)
-
-- `POST /_jobs/generate` → `{ job_id }`
-- `POST /_jobs/cluster` → `{ job_id }`
-- `GET /_jobs/{id}` → `{ status, progress, message, result? }`
-
-## Artifacts
-
-- `raw_<uid>.parquet`
-- `emb_<uid>.npy`
-- `result_<uid>.parquet`
-
-Stored in the Docker volume `data:`.
+Open http://localhost:5000 and use the UI.
 
 ## Notes
-
-- If `API_BASE` is empty, the app uses a small built-in sample dataset so you can test the flow.
-- Frontend uses polling for job status to keep it simple and robust.
-- For production, restrict CORS and move secrets out of compose.
+- Parquet requires `pyarrow` (already in requirements).
+- For large datasets, embedding is batched with retry/backoff.

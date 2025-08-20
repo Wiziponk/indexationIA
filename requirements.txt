@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic
+pandas
+numpy
+scikit-learn
+openai>=1.0.0
+python-docx
+tenacity
+pyarrow
+requests

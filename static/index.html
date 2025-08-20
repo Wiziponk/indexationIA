@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Indexation v2</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
+</head>
+<body>
+  <div class="container">
+    <div class="flex">
+      <h1>Indexation v2</h1>
+      <span class="badge right" id="health">checking…</span>
+    </div>
+
+    <!-- Generate embeddings -->
+    <div class="card">
+      <h2>1) Generate embeddings</h2>
+      <div class="grid">
+        <div class="col-12">
+          <button id="btnLoadFields">Load fields from API</button>
+          <span class="small" id="apiInfo"></span>
+        </div>
+        <div class="col-4">
+          <label>Primary key</label>
+          <select id="primaryKey"></select>
+          <div class="small">Suggestions: code_emission, codeEmission, id, video_id, uid</div>
+        </div>
+        <div class="col-8">
+          <label>Fields to include in embeddings</label>
+          <select id="embedFields" multiple size="6"></select>
+          <div class="small">Tip: include title, synopsis/description, themes…</div>
+        </div>
+
+        <div class="col-12">
+          <label>Scope</label>
+          <div class="flex">
+            <label><input type="radio" name="mode" value="api" checked> Full API</label>
+            <label><input type="radio" name="mode" value="excel"> Filter by Excel/CSV IDs</label>
+          </div>
+        </div>
+        <div class="col-6" id="excelCol" style="display:none">
+          <label>Upload Excel/CSV of IDs</label>
+          <input type="file" id="idsFile" accept=".csv,.xlsx,.xls" />
+          <button id="btnIdsPreview" class="secondary">Preview</button>
+          <div class="small" id="idsCols"></div>
+          <div class="small" id="idsToken" style="display:none"></div>
+          <div style="max-height:180px; overflow:auto;"><table class="table" id="idsTable"></table></div>
+        </div>
+        <div class="col-6">
+          <label>Transcripts (.docx) — filenames must contain the numeric ID</label>
+          <input type="file" id="transcripts" multiple accept=".docx" />
+        </div>
+
+        <div class="col-12">
+          <button id="btnPreview" class="secondary">Preview dataset</button>
+          <div style="max-height:220px; overflow:auto; margin-top:8px;">
+            <table class="table" id="dataPreview"></table>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <button id="btnGenerate">Generate</button>
+          <span class="small" id="genLinks"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cluster -->
+    <div class="card">
+      <h2>2) Cluster</h2>
+      <div class="grid">
+        <div class="col-4">
+          <label>Existing UID</label>
+          <input type="text" id="existingUid" placeholder="(optional) paste uid from step 1" />
+        </div>
+        <div class="col-4">
+          <label>Algorithm</label>
+          <select id="algo"><option value="kmeans">K-Means</option><option value="dbscan">DBSCAN</option></select>
+        </div>
+        <div class="col-4">
+          <label>K (if K-Means)</label>
+          <select id="kChoice">
+            <option value="auto">Auto</option>
+            <option>4</option><option>6</option><option>8</option><option>10</option>
+          </select>
+        </div>
+        <div class="col-4">
+          <label>Projection</label>
+          <select id="proj"><option value="pca">PCA</option><option value="tsne">t-SNE</option></select>
+        </div>
+        <div class="col-4">
+          <label>DBSCAN eps</label>
+          <input type="number" step="0.1" id="dbEps" value="0.8" />
+        </div>
+        <div class="col-4">
+          <label>DBSCAN min_samples</label>
+          <input type="number" id="dbMin" value="10" />
+        </div>
+        <div class="col-12">
+          <button id="btnCluster">Run clustering</button>
+          <span class="small" id="clusterDownload"></span>
+        </div>
+      </div>
+      <div id="chart" style="height:720px; margin-top:12px;"></div>
+      <div>
+        <table class="table" id="summary">
+          <thead><tr><th>Cluster</th><th>Name</th><th>Items</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $ = (q) => document.querySelector(q);
+const $$ = (q) => Array.from(document.querySelectorAll(q));
+
+async function health() {
+  try {
+    const r = await fetch('/api/health'); const js = await r.json();
+    $('#health').textContent = js.ok ? `OK • ${js.version}` : 'Not OK';
+  } catch { $('#health').textContent = 'Not OK'; }
+}
+health();
+
+// Toggle Excel section
+$$('input[name="mode"]').forEach(r => r.addEventListener('change', () => {
+  const isExcel = document.querySelector('input[name="mode"]:checked').value === 'excel';
+  $('#excelCol').style.display = isExcel ? '' : 'none';
+}));
+
+// Load fields
+$('#btnLoadFields').addEventListener('click', async () => {
+  const r = await fetch('/api/fields'); const js = await r.json();
+  $('#apiInfo').textContent = 'API: ' + (js.api_base || '');
+  const pk = $('#primaryKey'); pk.innerHTML = '';
+  const ef = $('#embedFields'); ef.innerHTML = '';
+  (js.fields || []).forEach(f => {
+    const o1 = document.createElement('option'); o1.value = f; o1.textContent = f; pk.appendChild(o1);
+    const o2 = document.createElement('option'); o2.value = f; o2.textContent = f; ef.appendChild(o2);
+  });
+  // preselect guesses
+  ['code_emission','codeEmission','id','video_id','uid'].some(g => {
+    const opt = Array.from(pk.options).find(o => o.value === g); if (opt) { pk.value = g; return true; } return false;
+  });
+  // preselect common text fields
+  ['title','titre','synopsis','description','summary'].forEach(c => {
+    const opt = Array.from(ef.options).find(o => o.value === c); if (opt) opt.selected = true;
+  });
+});
+
+// Upload IDs preview
+let idsToken = null;
+let idsIdCol = null;
+$('#btnIdsPreview').addEventListener('click', async () => {
+  const f = $('#idsFile').files[0]; if (!f) { alert('Choose a file'); return; }
+  const fd = new FormData(); fd.append('excel', f);
+  const r = await fetch('/api/upload-ids', { method:'POST', body:fd }); const js = await r.json();
+  if (js.token) {
+    idsToken = js.token;
+    $('#idsToken').style.display = '';
+    $('#idsToken').textContent = 'Token: ' + idsToken;
+    // columns list
+    const cols = js.columns || [];
+    $('#idsCols').innerHTML = 'Columns: ' + cols.map(c => `<code>${c}</code>`).join(' ');
+    idsIdCol = cols[0] || null;
+    // table
+    const tbl = $('#idsTable'); tbl.innerHTML = '';
+    if (js.preview && js.preview.length) {
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      Object.keys(js.preview[0]).forEach(c => { const th = document.createElement('th'); th.textContent = c; trh.appendChild(th); });
+      thead.appendChild(trh); tbl.appendChild(thead);
+      const tb = document.createElement('tbody');
+      js.preview.forEach(row => {
+        const tr = document.createElement('tr');
+        Object.values(row).forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+    }
+  } else {
+    alert(js.error || 'Upload failed');
+  }
+});
+
+// Preview dataset
+$('#btnPreview').addEventListener('click', async () => {
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const pk = $('#primaryKey').value;
+  const fields = Array.from($('#embedFields').selectedOptions).map(o => o.value);
+  if (!pk || !fields.length) { alert('Pick a primary key and at least one field'); return; }
+  const fd = new FormData();
+  fd.append('mode', mode);
+  fd.append('primary_key', pk);
+  fields.forEach(f => fd.append('embed_fields', f));
+  if (mode === 'excel') {
+    if (!idsToken) { alert('Preview the Excel first'); return; }
+    fd.append('excel_token', idsToken);
+    // try to pick first column as id col for preview table; allow edit later
+    fd.append('excel_id_col', idsIdCol || '');
+  }
+  Array.from($('#transcripts').files).forEach(f => fd.append('transcripts', f));
+  const r = await fetch('/api/preview', { method:'POST', body:fd }); const js = await r.json();
+  if (js.rows) {
+    const tbl = $('#dataPreview'); tbl.innerHTML = '';
+    if (js.rows.length) {
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      Object.keys(js.rows[0]).forEach(c => { const th = document.createElement('th'); th.textContent = c; trh.appendChild(th); });
+      thead.appendChild(trh); tbl.appendChild(thead);
+      const tb = document.createElement('tbody');
+      js.rows.forEach(row => {
+        const tr = document.createElement('tr');
+        Object.keys(js.rows[0]).forEach(c => { const td = document.createElement('td'); td.textContent = row[c]; tr.appendChild(td); });
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+    }
+  } else {
+    alert(js.detail || 'Preview failed');
+  }
+});
+
+// Generate
+let lastUid = null;
+$('#btnGenerate').addEventListener('click', async () => {
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const pk = $('#primaryKey').value;
+  const fields = Array.from($('#embedFields').selectedOptions).map(o => o.value);
+  if (!pk || !fields.length) { alert('Pick a primary key and at least one field'); return; }
+  const fd = new FormData();
+  fd.append('mode', mode);
+  fd.append('primary_key', pk);
+  fields.forEach(f => fd.append('embed_fields', f));
+  if (mode === 'excel') {
+    if (!idsToken) { alert('Preview the Excel first'); return; }
+    fd.append('excel_token', idsToken);
+    fd.append('excel_id_col', idsIdCol || '');
+  }
+  Array.from($('#transcripts').files).forEach(f => fd.append('transcripts', f));
+  const r = await fetch('/api/generate', { method:'POST', body:fd }); const js = await r.json();
+  if (js.uid) {
+    lastUid = js.uid;
+    $('#genLinks').innerHTML = `UID <b>${js.uid}</b> — <a href="${js.parquet}">Download Parquet</a> • <a href="${js.embeddings}">Download embeddings</a>`;
+    $('#existingUid').value = js.uid;
+  } else {
+    alert(js.detail || 'Generation failed');
+  }
+});
+
+// Cluster
+$('#btnCluster').addEventListener('click', async () => {
+  const fd = new FormData();
+  const uid = $('#existingUid').value.trim();
+  if (uid) fd.append('existing_uid', uid);
+  fd.append('k_choice', $('#kChoice').value);
+  fd.append('algo_choice', $('#algo').value);
+  fd.append('proj_choice', $('#proj').value);
+  fd.append('db_eps', $('#dbEps').value);
+  fd.append('db_min_samples', $('#dbMin').value);
+  const r = await fetch('/api/cluster', { method:'POST', body:fd }); const js = await r.json();
+  if (!js.points) { alert(js.detail || 'Clustering failed'); return; }
+  // Chart
+  const clusters = [...new Set(js.points.map(p => p.cluster))].sort((a,b)=>a-b);
+  const names = js.meta.cluster_names || {};
+  const traces = clusters.map(c => {
+    const pts = js.points.filter(p => p.cluster === c);
+    return { x: pts.map(p => p.x), y: pts.map(p => p.y), mode: 'markers', type: 'scattergl',
+             name: names[c] ? `${c} - ${names[c]}` : `Cluster ${c}`,
+             text: pts.map(p => p.title || p.id || ''),
+             hovertemplate: "<b>%{text}</b><br>x=%{x:.2f}, y=%{y:.2f}<extra></extra>",
+             marker: { size: 9 } };
+  });
+  Plotly.newPlot('chart', traces, { title: `k=${js.meta.k} ${js.meta.silhouette >= 0 ? '(silhouette '+js.meta.silhouette.toFixed(3)+')' : ''}`, height: 720, margin:{l:40,r:10,t:60,b:40} }, {displayModeBar:true});
+  // Downloads
+  $('#clusterDownload').innerHTML = `<a href="${js.download.parquet}">Download result parquet</a> • <a href="${js.download.embeddings}">Download embeddings</a>`;
+  // Summary
+  const by = new Map(); js.points.forEach(p => { if (!by.has(p.cluster)) by.set(p.cluster, []); by.get(p.cluster).push(p); });
+  const rows = [...by.entries()].map(([c, arr]) => ({ c, n: arr.length })).sort((a,b)=>a.c-b.c);
+  const tbody = $('#summary tbody'); tbody.innerHTML = '';
+  rows.forEach(r => { const tr = document.createElement('tr'); const nm = names[r.c] || ''; tr.innerHTML = `<td>${r.c}</td><td>${nm}</td><td>${r.n}</td>`; tbody.appendChild(tr); });
+});
+</script>
+</body>
+</html>
