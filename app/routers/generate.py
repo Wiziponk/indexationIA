@@ -19,6 +19,41 @@ from ..services.utils import get_nested_value
 router = APIRouter()
 
 
+def _read_ids_frame(tmp: Path) -> pd.DataFrame:
+    if tmp.suffix.lower() in [".xlsx", ".xls"]:
+        df_ids = pd.read_excel(tmp)
+    else:
+        df_ids = pd.read_csv(tmp)
+    df_ids.columns = [str(c).strip() for c in df_ids.columns]
+    return df_ids
+
+
+def _resolve_id_column(df_ids: pd.DataFrame, excel_id_col: Optional[str]) -> str:
+    if excel_id_col and excel_id_col in df_ids.columns:
+        return excel_id_col
+    for guess in ["id", "ID", "Id", "code_emission", "codeEmission", "video_id", "uid"]:
+        if guess in df_ids.columns:
+            return guess
+    for col in df_ids.columns:
+        if not df_ids[col].isna().all():
+            return col
+    return df_ids.columns[0]
+
+
+def _assert_embed_fields_ok(embed_fields: List[str]) -> None:
+    if not embed_fields or not any(str(f).strip() for f in embed_fields):
+        raise HTTPException(400, "Please select at least one API field to embed.")
+
+
+def _assert_api_base_configured() -> None:
+    if not API_BASE or not str(API_BASE).strip():
+        raise HTTPException(
+            400,
+            "EDUC_API_BASE is not configured on the server. "
+            "Set it (and any token) and reload the app."
+        )
+
+
 @router.post("/preview")
 async def generate_preview(
     mode: str = Form("api"),
@@ -28,46 +63,54 @@ async def generate_preview(
     excel_id_col: Optional[str] = Form(None),
     transcripts: List[UploadFile] = File(default=[]),
 ):
-    if not primary_key or not embed_fields:
-        raise HTTPException(400, "Missing primary key or fields")
+    if not primary_key or not str(primary_key).strip():
+        raise HTTPException(400, "Please choose a Primary key.")
+    _assert_embed_fields_ok(embed_fields)
+    _assert_api_base_configured()
 
-    programs = fetch_all_programs()
+    try:
+        programs = fetch_all_programs()
+    except Exception as e:
+        raise HTTPException(400, f"API error while fetching programs: {e}")
     if not programs:
-        raise HTTPException(400, "No data returned by the API")
+        raise HTTPException(400, "The catalog API returned no data. Check API base and auth.")
 
     wanted_ids = None
     if mode == "excel":
         info = get_preview(excel_token or "")
         if not info or not Path(info["path"]).exists():
-            raise HTTPException(400, "Uploaded Excel token expired; please re-upload")
+            raise HTTPException(400, "Uploaded Excel token expired; please re-upload the file.")
         tmp = Path(info["path"])
-        if tmp.suffix.lower() in [".xlsx", ".xls"]:
-            df_ids = pd.read_excel(tmp)
-        else:
-            df_ids = pd.read_csv(tmp)
-        if excel_id_col not in df_ids.columns:
-            raise HTTPException(400, "Chosen ID column not found in uploaded file")
-        wanted_ids = set(df_ids[excel_id_col].astype(str).str.strip().tolist())
+        try:
+            df_ids = _read_ids_frame(tmp)
+        except Exception as e:
+            raise HTTPException(400, f"Failed to read the uploaded Excel/CSV: {e}")
+        id_col = _resolve_id_column(df_ids, (excel_id_col or "").strip() or None)
+        wanted_ids = set(df_ids[id_col].astype(str).str.strip().tolist())
 
     df = pd.DataFrame(programs)
+
+    # primary key (supports dot-paths)
     if "." in primary_key or primary_key not in df.columns:
         df["_pk"] = df.apply(lambda r: get_nested_value(r.to_dict(), primary_key), axis=1)
         pk_col = "_pk"
+        if df[pk_col].astype(str).str.strip().eq("").all():
+            raise HTTPException(400, f"Primary key '{primary_key}' not found in API data.")
     else:
         pk_col = primary_key
 
     if wanted_ids is not None:
         df = df[df[pk_col].astype(str).str.strip().isin(wanted_ids)].copy()
         if df.empty:
-            raise HTTPException(400, "None of the provided IDs matched the API data")
+            raise HTTPException(400, "None of the provided IDs matched the API data.")
 
-    # Attach transcripts
+    # transcripts (text + filename)
     t_map, t_name = await load_transcripts(transcripts)
     if t_map:
         df["transcript_text"] = df[pk_col].astype(str).map(t_map).fillna("")
         df["_transcript_name"] = df[pk_col].astype(str).map(t_name).fillna("")
 
-    # Build preview table
+    # Build preview rows
     rows = []
     for _, r in df.head(50).iterrows():
         d = r.to_dict()
@@ -89,51 +132,58 @@ async def run_generate(
     excel_id_col: Optional[str] = Form(None),
     transcripts: List[UploadFile] = File(default=[]),
 ):
-    if not primary_key or not embed_fields:
-        raise HTTPException(400, "Missing primary key or fields")
+    if not primary_key or not str(primary_key).strip():
+        raise HTTPException(400, "Please choose a Primary key.")
+    _assert_embed_fields_ok(embed_fields)
+    _assert_api_base_configured()
 
-    programs = fetch_all_programs()
+    try:
+        programs = fetch_all_programs()
+    except Exception as e:
+        raise HTTPException(400, f"API error while fetching programs: {e}")
     if not programs:
-        raise HTTPException(400, "No data returned by the API")
+        raise HTTPException(400, "The catalog API returned no data. Check API base and auth.")
 
     wanted_ids = None
     if mode == "excel":
         info = pop_preview(excel_token or "")
         if not info or not Path(info["path"]).exists():
-            raise HTTPException(400, "Uploaded Excel token expired; please re-upload")
+            raise HTTPException(400, "Uploaded Excel token expired; please re-upload the file.")
         tmp = Path(info["path"])
-        if tmp.suffix.lower() in [".xlsx", ".xls"]:
-            df_ids = pd.read_excel(tmp)
-        else:
-            df_ids = pd.read_csv(tmp)
+        try:
+            df_ids = _read_ids_frame(tmp)
+        except Exception as e:
+            raise HTTPException(400, f"Failed to read the uploaded Excel/CSV: {e}")
         try:
             tmp.unlink(missing_ok=True)
         except Exception:
             pass
-        if excel_id_col not in df_ids.columns:
-            raise HTTPException(400, "Chosen ID column not found in uploaded file")
-        wanted_ids = set(df_ids[excel_id_col].astype(str).str.strip().tolist())
+        id_col = _resolve_id_column(df_ids, (excel_id_col or "").strip() or None)
+        wanted_ids = set(df_ids[id_col].astype(str).str.strip().tolist())
 
     df = pd.DataFrame(programs)
+
+    # primary key (supports dot-paths)
     if "." in primary_key or primary_key not in df.columns:
         df["_pk"] = df.apply(lambda r: get_nested_value(r.to_dict(), primary_key), axis=1)
         pk_col = "_pk"
+        if df[pk_col].astype(str).str.strip().eq("").all():
+            raise HTTPException(400, f"Primary key '{primary_key}' not found in API data.")
     else:
         pk_col = primary_key
 
     if wanted_ids is not None:
         df = df[df[pk_col].astype(str).str.strip().isin(wanted_ids)].copy()
         if df.empty:
-            raise HTTPException(400, "None of the provided IDs matched the API data")
+            raise HTTPException(400, "None of the provided IDs matched the API data.")
 
-    # Transcripts
-    t_map, t_name = await load_transcripts(transcripts)
+    # transcripts (text only for embeddings)
+    t_map, _ = await load_transcripts(transcripts)
     if t_map:
         df["transcript_text"] = df[pk_col].astype(str).map(t_map).fillna("")
         if "transcript_text" not in embed_fields:
             embed_fields.append("transcript_text")
 
-    # Embedding
     texts = [build_text_from_fields(row.to_dict(), embed_fields) for _, row in df.iterrows()]
     df["_text_for_embedding"] = texts
     df = df[df["_text_for_embedding"].astype(str).str.strip() != ""].copy()

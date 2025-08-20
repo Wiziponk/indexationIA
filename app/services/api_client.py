@@ -5,72 +5,76 @@ import requests
 
 from ..config import API_BASE, API_TOKEN, TIMEOUT
 
+
 def auth_headers() -> Dict[str, str]:
     headers = {"Accept": "application/json"}
     if API_TOKEN:
         headers["Authorization"] = f"Bearer {API_TOKEN}"
     return headers
 
-def fetch_all_programs(max_pages: int = 50, page_param: str = "page", start_page: int = 1) -> List[Dict[str, Any]]:
-    items: List[Dict[str, Any]] = []
-    url = API_BASE
-    seen = set()
-    for _ in range(max_pages):
-        if not url or url in seen:
-            break
-        seen.add(url)
-        r = requests.get(url, headers=auth_headers(), timeout=TIMEOUT)
-        r.raise_for_status()
-        data = r.json()
-        if isinstance(data, dict):
-            if isinstance(data.get("results"), list):
-                items.extend(data["results"])
-            elif isinstance(data.get("data"), list):
-                items.extend(data["data"])
-            elif isinstance(data.get("items"), list):
-                items.extend(data["items"])
-            elif isinstance(data.get("programs"), list):
-                items.extend(data["programs"])
-            next_url = data.get("next") or data.get("links", {}).get("next")
-            if next_url:
-                url = next_url
-                continue
-            # fallback: naive page increment
-            import urllib.parse as up
-            parsed = up.urlparse(url)
-            qs = dict(up.parse_qsl(parsed.query))
-            try:
-                cur = int(qs.get(page_param, start_page))
-                qs[page_param] = str(cur + 1)
-                url = parsed._replace(query=up.urlencode(qs)).geturl()
-            except Exception:
-                url = None
-        elif isinstance(data, list):
-            items.extend(data)
-            break
-        else:
-            break
+
+def _http_get(url: str) -> requests.Response:
+    """One place to apply headers & timeout and raise meaningful errors."""
+    r = requests.get(url, headers=auth_headers(), timeout=TIMEOUT)
+    r.raise_for_status()
+    return r
+
+
+def _extract_list(payload: Any) -> List[Dict[str, Any]]:
+    """
+    Your API returns a single big JSON list.
+
+    Still, we keep a tiny bit of tolerance:
+    - If it's already a list, return it.
+    - If it's a dict with a top-level list under a common key (results/data/items/programs),
+      return that list.
+    - Otherwise, return [].
+    """
+    if isinstance(payload, list):
+        return payload
+
+    if isinstance(payload, dict):
+        for key in ("results", "data", "items", "programs"):
+            val = payload.get(key)
+            if isinstance(val, list):
+                return val
+
+    return []
+
+
+def fetch_all_programs() -> List[Dict[str, Any]]:
+    """
+    Fetch once, assume the API returns ALL items as a single JSON list.
+    No pagination, no "next" following, no page guessing.
+    """
+    if not API_BASE or not str(API_BASE).strip():
+        raise RuntimeError("EDUC_API_BASE not set on the server.")
+
+    r = _http_get(API_BASE)
+    data = r.json()
+    items = _extract_list(data)
     return items
 
+
 def discover_fields() -> List[str]:
+    """
+    Return a flat list of field names to present in the UI.
+    - Includes top-level keys
+    - Includes one-level dotted keys for nested dicts (k.sub)
+    Uses ONLY the single response body (no pagination).
+    """
     try:
-        r = requests.get(API_BASE, headers=auth_headers(), timeout=TIMEOUT)
-        r.raise_for_status()
+        if not API_BASE or not str(API_BASE).strip():
+            return []
+
+        r = _http_get(API_BASE)
         data = r.json()
-        if isinstance(data, dict):
-            sample = None
-            for key in ["results", "data", "items", "programs"]:
-                if isinstance(data.get(key), list) and data[key]:
-                    sample = data[key][0]
-                    break
-            if sample is None and data:
-                sample = data
-        elif isinstance(data, list) and data:
-            sample = data[0]
-        else:
-            sample = {}
+        items = _extract_list(data)
+        sample = items[0] if items else (data if isinstance(data, dict) else {})
+
         if not isinstance(sample, dict):
             return []
+
         fields = set()
         for k, v in sample.items():
             fields.add(k)

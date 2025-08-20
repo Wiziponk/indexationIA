@@ -1,24 +1,39 @@
 from __future__ import annotations
-
 import os
 from pathlib import Path
-from dotenv import load_dotenv
+from openai import OpenAI
 
-load_dotenv()
-
+# Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
 # External API
-API_BASE = os.getenv("EDUC_API_BASE", "https://educ.arte.tv/api/list/programs")
-API_TOKEN = os.getenv("EDUC_API_TOKEN", "")
-TIMEOUT = int(os.getenv("TIMEOUT", "60"))
+API_BASE = os.getenv("EDUC_API_BASE", "").strip()
+API_TOKEN = os.getenv("EDUC_API_TOKEN", "").strip()
+TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "30"))
+
+
+# OpenAI
+def get_openai_client() -> OpenAI:
+    key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        raise RuntimeError("OPENAI_API_KEY is not set. Export it before running.")
+    return OpenAI(api_key=key)
 
 # Embeddings
 EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
 EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", "96"))
 MAX_TEXT_CHARS = int(os.getenv("MAX_TEXT_CHARS", "50000"))
+
+# Segmentation / clip naming
+SEG_EMBED_MODEL = os.getenv("SEG_EMBED_MODEL", "text-embedding-3-large")
+SEG_GEN_MODEL = os.getenv("SEG_GEN_MODEL", "gpt-4o-mini")
+CLIP_KEEP_RATIO_DEFAULT = float(os.getenv("CLIP_KEEP_RATIO", "0.6"))
+
+# Clustering defaults
+
+DEFAULT_PROJ = os.getenv("DEFAULT_PROJ", "pca")  # pca|tsne
 
 # Projection
 PROJECTION_DEFAULT = os.getenv("PROJECTION_DEFAULT", "pca")  # 'pca' or 'tsne' (UMAP optional)
