@@ -117,6 +117,21 @@
 const $ = (q) => document.querySelector(q);
 const $$ = (q) => Array.from(document.querySelectorAll(q));
 
+function startLoading(btn, label = "Working…") {
+  if (!btn) return () => {};
+  btn.dataset.oldText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = label;
+  $('#health')?.classList.add('loading'); // just a tinted badge
+  return () => stopLoading(btn);
+}
+function stopLoading(btn) {
+  if (!btn) return;
+  btn.disabled = false;
+  if (btn.dataset.oldText) btn.textContent = btn.dataset.oldText;
+  $('#health')?.classList.remove('loading');
+}
+
 async function health() {
   try {
     const r = await fetch('/api/health'); const js = await r.json();
@@ -132,7 +147,8 @@ $$('input[name="mode"]').forEach(r => r.addEventListener('change', () => {
 }));
 
 // Load fields
-$('#btnLoadFields').addEventListener('click', async () => {
+$('#btnLoadFields').addEventListener('click', async (ev) => {
+  const done = startLoading(ev.currentTarget, "Loading API fields…");
   const r = await fetch('/api/fields'); const js = await r.json();
   $('#apiInfo').textContent = 'API: ' + (js.api_base || '');
   const pk = $('#primaryKey'); pk.innerHTML = '';
@@ -149,13 +165,15 @@ $('#btnLoadFields').addEventListener('click', async () => {
   ['title','titre','synopsis','description','summary'].forEach(c => {
     const opt = Array.from(ef.options).find(o => o.value === c); if (opt) opt.selected = true;
   });
+done();
 });
 
 // Upload IDs preview
 let idsToken = null;
 let idsIdCol = null;
-$('#btnIdsPreview').addEventListener('click', async () => {
-  const f = $('#idsFile').files[0]; if (!f) { alert('Choose a file'); return; }
+$('#btnIdsPreview').addEventListener('click', async (ev) => {
+  const done = startLoading(ev.currentTarget, "Uploading…");
+  const f = $('#idsFile').files[0]; if (!f) { alert('Choose a file'); done();return; }
   const fd = new FormData(); fd.append('excel', f);
   const r = await fetch('/api/upload-ids', { method:'POST', body:fd }); const js = await r.json();
   if (js.token) {
@@ -184,10 +202,12 @@ $('#btnIdsPreview').addEventListener('click', async () => {
   } else {
     alert(js.error || 'Upload failed');
   }
+  done();
 });
 
 // Preview dataset
-$('#btnPreview').addEventListener('click', async () => {
+$('#btnPreview').addEventListener('click', async (ev) => {
+  const done = startLoading(ev.currentTarget, "Previewing…");
   const mode = document.querySelector('input[name="mode"]:checked').value;
   const pk = $('#primaryKey').value;
   const fields = Array.from($('#embedFields').selectedOptions).map(o => o.value);
@@ -222,11 +242,13 @@ $('#btnPreview').addEventListener('click', async () => {
   } else {
     alert(js.detail || 'Preview failed');
   }
+  done();
 });
 
 // Generate
 let lastUid = null;
-$('#btnGenerate').addEventListener('click', async () => {
+$('#btnGenerate').addEventListener('click', async (ev) => {
+  const done = startLoading(ev.currentTarget, "Generating…");
   const mode = document.querySelector('input[name="mode"]:checked').value;
   const pk = $('#primaryKey').value;
   const fields = Array.from($('#embedFields').selectedOptions).map(o => o.value);
@@ -249,10 +271,12 @@ $('#btnGenerate').addEventListener('click', async () => {
   } else {
     alert(js.detail || 'Generation failed');
   }
+  done();
 });
 
 // Cluster
-$('#btnCluster').addEventListener('click', async () => {
+$('#btnCluster').addEventListener('click', async (ev) => {
+  const done = startLoading(ev.currentTarget, "Clustering…");
   const fd = new FormData();
   const uid = $('#existingUid').value.trim();
   if (uid) fd.append('existing_uid', uid);
@@ -282,6 +306,7 @@ $('#btnCluster').addEventListener('click', async () => {
   const rows = [...by.entries()].map(([c, arr]) => ({ c, n: arr.length })).sort((a,b)=>a.c-b.c);
   const tbody = $('#summary tbody'); tbody.innerHTML = '';
   rows.forEach(r => { const tr = document.createElement('tr'); const nm = names[r.c] || ''; tr.innerHTML = `<td>${r.c}</td><td>${nm}</td><td>${r.n}</td>`; tbody.appendChild(tr); });
+  done();
 });
 </script>
 </body>

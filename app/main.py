@@ -27,8 +27,12 @@ app.include_router(generate_router, prefix="/api", tags=["generate"])
 app.include_router(cluster_router, prefix="/api", tags=["cluster"])
 
 # Static UI
-app.mount("/static", StaticFiles(directory=str(BASE_DIR.parent / "static")), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory=str(BASE_DIR / "static")),
+    name="static"
+)
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return FileResponse(str(BASE_DIR.parent / "static" / "index.html"))
+    return FileResponse(str(BASE_DIR / "static" / "index.html"))

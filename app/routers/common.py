@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 import uuid
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, HTTPException
+from fastapi import APIRouter, UploadFile, HTTPException, File
 from fastapi.responses import FileResponse, JSONResponse
 import pandas as pd
 
@@ -26,7 +26,7 @@ def api_fields():
     return {"fields": discover_fields(), "api_base": API_BASE}
 
 @router.post("/upload-ids")
-async def upload_ids(excel: UploadFile):
+async def upload_ids(excel: UploadFile=File(...)):
     cleanup_previews()
     if not excel or not excel.filename:
         raise HTTPException(400, "No file uploaded")
