@@ -6,6 +6,16 @@
   <title>Indexation v3</title>
   <link rel="stylesheet" href="/static/styles.css" />
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
+  <style>
+    /* On-screen debug drawer */
+    #debugWrap { position: fixed; right: 12px; bottom: 12px; width: 380px; max-height: 40vh; z-index: 9999; }
+    #debugHead { background:#1e293b; color:#e2e8f0; padding:6px 10px; border-radius:10px 10px 0 0; font-size:12px; cursor:pointer; }
+    #debugBody { background:#0f172a; color:#cbd5e1; border:1px solid #334155; border-top:0; padding:10px; border-radius:0 0 10px 10px; display:none; overflow:auto; max-height:34vh; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; }
+    #debugBody pre { margin:0; white-space:pre-wrap; word-break:break-word; }
+    .badge.loading { background:#233145; }
+    .ok { color:#10b981; }
+    .err { color:#f87171; }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -21,6 +31,7 @@
         <div class="col-12">
           <button id="btnLoadFields">Load fields from API</button>
           <span class="small" id="apiInfo"></span>
+          <span class="small" id="fieldsCount"></span>
         </div>
         <div class="col-4">
           <label>Primary key</label>
@@ -171,9 +182,37 @@
     </div>
   </div>
 
+  <!-- Debug drawer -->
+  <div id="debugWrap">
+    <div id="debugHead">🛠 Debug (click)</div>
+    <div id="debugBody">
+      <div id="dbgErrors"></div>
+      <pre id="dbgLog"></pre>
+    </div>
+  </div>
+
 <script>
 const $ = (q) => document.querySelector(q);
 const $$ = (q) => Array.from(document.querySelectorAll(q));
+
+// On-screen error capture
+(function wireDebug(){
+  const head = $('#debugHead'), body = $('#debugBody');
+  head.addEventListener('click', ()=>{ body.style.display = body.style.display ? '' : 'none'; });
+  window.addEventListener('error', (e) => {
+    $('#dbgErrors').innerHTML = `<div class="err"><b>JS Error:</b> ${e.message}</div>`;
+    body.style.display = '';
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    $('#dbgErrors').innerHTML = `<div class="err"><b>Promise Rejection:</b> ${e.reason}</div>`;
+    body.style.display = '';
+  });
+})();
+function dlog(label, obj) {
+  const pre = $('#dbgLog');
+  const line = `[${new Date().toLocaleTimeString()}] ${label}: ` + (obj ? JSON.stringify(obj, null, 2) : '');
+  pre.textContent = (line + "\n\n" + pre.textContent).slice(0, 40000);
+}
 
 function startLoading(btn, label = "Working…") {
   if (!btn) return () => {};
@@ -189,11 +228,12 @@ function stopLoading(btn) {
   if (btn.dataset.oldText) btn.textContent = btn.dataset.oldText;
   $('#health')?.classList.remove('loading');
 }
-async function fetchJSON(url, options, btn=null) {
+async function fetchJSON(url, options={}, btn=null) {
   const r = await fetch(url, options);
   const text = await r.text();
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = { detail: text }; }
+  dlog(`HTTP ${r.status} ${url}`, body);
   if (!r.ok) {
     const msg = (body && (body.detail || body.error)) ? (Array.isArray(body.detail) ? body.detail.map(x=>x.msg||x).join(", ") : body.detail) : `HTTP ${r.status}`;
     if (btn) stopLoading(btn);
@@ -220,23 +260,44 @@ $$('input[name="mode"]').forEach(r => r.addEventListener('change', () => {
 let idsToken = null;
 let idsIdCol = null;
 
-// Load fields
+function renderSelect(el, items) {
+  el.innerHTML = '';
+  for (const v of items) {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = v;
+    el.appendChild(o);
+  }
+}
+
+// Load fields (HARDENED)
 $('#btnLoadFields').addEventListener('click', async (ev) => {
   const done = startLoading(ev.currentTarget, "Loading API fields…");
   const js = await fetchJSON('/api/fields', {}, ev.currentTarget);
+  const fields = Array.isArray(js.fields) ? js.fields : [];
   $('#apiInfo').textContent = 'API: ' + (js.api_base || '');
-  const pk = $('#primaryKey'); pk.innerHTML = '';
-  const ef = $('#embedFields'); ef.innerHTML = '';
-  (js.fields || []).forEach(f => {
-    const o1 = document.createElement('option'); o1.value = f; o1.textContent = f; pk.appendChild(o1);
-    const o2 = document.createElement('option'); o2.value = f; o2.textContent = f; ef.appendChild(o2);
-  });
-  ['code_emission','codeEmission','id','video_id','uid'].some(g => {
-    const opt = Array.from(pk.options).find(o => o.value === g); if (opt) { pk.value = g; return true; } return false;
-  });
-  ['title','titre','synopsis','description','summary'].forEach(c => {
-    const opt = Array.from(ef.options).find(o => o.value === c); if (opt) opt.selected = true;
-  });
+  $('#fieldsCount').innerHTML = fields.length ? `<span class="ok">${fields.length} fields loaded</span>` : '<span class="err">0 field found</span>';
+
+  const pk = $('#primaryKey');
+  const ef = $('#embedFields');
+  renderSelect(pk, fields);
+  renderSelect(ef, fields);
+
+  // Preselect sane defaults if present
+  const pkGuesses = ['code_emission','codeEmission','id','video_id','uid'];
+  const efGuesses = ['title','titre','synopsis','description','summary'];
+  for (const g of pkGuesses) {
+    const opt = Array.from(pk.options).find(o => o.value === g);
+    if (opt) { pk.value = g; break; }
+  }
+  for (const g of efGuesses) {
+    const opt = Array.from(ef.options).find(o => o.value === g);
+    if (opt) opt.selected = true;
+  }
+
+  // Make sure selects are visible even if empty
+  pk.size = Math.min(8, pk.options.length || 1);
+  ef.size = Math.min(8, Math.max(6, ef.options.length || 6));
+
   done();
 });
 
@@ -249,12 +310,14 @@ $('#btnIdsPreview').addEventListener('click', async (ev) => {
   idsToken = js.token;
   $('#idsToken').style.display = '';
   $('#idsToken').textContent = 'Token: ' + idsToken;
+
   const cols = js.columns || [];
   $('#idsCols').innerHTML = 'Columns: ' + cols.map(c => `<code>${c}</code>`).join(' ');
-  const sel = $('#idsColSelect'); sel.innerHTML = '';
-  cols.forEach(c => { const opt = document.createElement('option'); opt.value = c; opt.textContent = c; sel.appendChild(opt); });
-  sel.value = cols[0]; idsIdCol = sel.value; sel.addEventListener('change', ()=>{ idsIdCol = sel.value; });
-  // small preview table
+
+  const sel = $('#idsColSelect'); renderSelect(sel, cols);
+  sel.value = cols[0] || '';
+  idsIdCol = sel.value; sel.addEventListener('change', ()=>{ idsIdCol = sel.value; });
+
   const tbl = $('#idsTable'); tbl.innerHTML = '';
   if (js.preview && js.preview.length) {
     const thead = document.createElement('thead'); const trh = document.createElement('tr');
@@ -284,8 +347,7 @@ $('#btnPrepare').addEventListener('click', async (ev) => {
   Array.from($('#transcripts').files).forEach(f => fd.append('transcripts', f));
   const js = await fetchJSON('/api/segment/prepare', { method:'POST', body:fd }, ev.currentTarget);
   $('#prepInfo').textContent = `Included: ${js.count_included} • Excluded (no transcript): ${js.count_excluded}`;
-  const sel = $('#samplePk'); sel.innerHTML = '';
-  (js.sample_ids || []).forEach(id => { const opt=document.createElement('option'); opt.value=id; opt.textContent=id; sel.appendChild(opt); });
+  const sel = $('#samplePk'); renderSelect(sel, js.sample_ids || []);
   done();
 });
 
@@ -308,7 +370,6 @@ $('#btnPreviewClips').addEventListener('click', async (ev) => {
   fd.append('with_titles', $('#withTitles').checked ? 'true':'false');
   Array.from($('#transcripts').files).forEach(f => fd.append('transcripts', f));
   const js = await fetchJSON('/api/segment/preview', { method:'POST', body:fd }, ev.currentTarget);
-  // render table
   const tbl = $('#clipsPreview'); tbl.innerHTML = '';
   if (js.segments && js.segments.length) {
     const thead=document.createElement('thead'); const trh=document.createElement('tr');
