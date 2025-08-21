@@ -17,6 +17,7 @@ export EDUC_API_BASE="https://educ.arte.tv/api/list/programs"
 
 # Run
 uvicorn app.main:app --reload --port 5000
+python -m dotenv run -- uvicorn app.main:app --reload --port 5000
 ```
 
 Open http://localhost:5000 and use the UI.

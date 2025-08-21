@@ -13,7 +13,8 @@ from sklearn.metrics import silhouette_score
 def auto_kmeans(X: np.ndarray, k_min: int = 4, k_max: int = 10) -> Tuple[int, float, np.ndarray]:
     best_k, best_score, best_labels = None, -1.0, None
     for k in range(k_min, k_max + 1):
-        km = KMeans(n_clusters=k, n_init="auto", random_state=42)
+        # Use a numeric n_init for broad sklearn compatibility
+        km = KMeans(n_clusters=k, n_init=10, random_state=42)
         labels = km.fit_predict(X)
         # need at least 2 clusters to compute silhouette
         if len(set(labels)) < 2:
@@ -25,7 +26,7 @@ def auto_kmeans(X: np.ndarray, k_min: int = 4, k_max: int = 10) -> Tuple[int, fl
         if score > best_score:
             best_k, best_score, best_labels = k, score, labels
     if best_k is None:
-        km = KMeans(n_clusters=min(max(2, X.shape[0] // 2), 4), n_init="auto", random_state=42)
+        km = KMeans(n_clusters=min(max(2, X.shape[0] // 2), 4), n_init=10, random_state=42)
         best_labels = km.fit_predict(X)
         best_k = len(set(best_labels))
         best_score = -1.0
@@ -68,7 +69,7 @@ def kmeans_auto_or_k(X: np.ndarray, k_choice: str = "auto") -> Tuple[np.ndarray,
         k = int(k_choice)
     except Exception:
         k = 6  # sensible default
-    km = KMeans(n_clusters=max(2, k), n_init="auto", random_state=42)
+    km = KMeans(n_clusters=max(2, k), n_init=10, random_state=42)
     labels = km.fit_predict(X)
 
     if len(set(labels)) >= 2:

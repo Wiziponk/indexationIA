@@ -62,7 +62,7 @@ async def run_cluster(
             from sklearn.metrics import silhouette_score
             try:
                 k = int(k_choice)
-                km = KMeans(n_clusters=k, n_init="auto", random_state=42)
+                km = KMeans(n_clusters=k, n_init=10, random_state=42)
                 labels = km.fit_predict(X)
                 sil = silhouette_score(X, labels) if len(set(labels)) > 1 else -1.0
             except Exception:

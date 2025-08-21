@@ -132,10 +132,9 @@ async def preview_one(
     if not transcript_text:
         raise HTTPException(400, "No transcript attached for this ID.")
 
-    segments = segment_text(transcript_text, keep_ratio=keep_ratio, with_titles=with_titles, brief=brief)
-    # embeddings for clips + a program-level embedding
-    clip_embs = embed_clips(segments)
-    prog_emb = program_embedding(program_row, primary_key, embed_fields, segments)
+    segments = await segment_text(transcript_text, keep_ratio=keep_ratio, with_titles=with_titles, brief=brief)
+    clip_embs = await embed_clips(segments)
+    prog_emb  = await program_embedding(program_row, primary_key, embed_fields, segments)
 
     # compact preview payload (truncate text)
     preview = []
@@ -238,11 +237,11 @@ async def batch_zip(
         row = r.to_dict()
         pk_value = str(row[pk_col])
         tx = row["__tx"]
-        segments = segment_text(tx, keep_ratio=keep_ratio, with_titles=with_titles, brief=brief)
+        segments = await segment_text(tx, keep_ratio=keep_ratio, with_titles=with_titles, brief=brief)
         if not segments:
             continue
-        clip_embs = embed_clips(segments)
-        prog_emb = program_embedding(row, primary_key, embed_fields, segments)
+        clip_embs = await embed_clips(segments)
+        prog_emb  = await program_embedding(row, primary_key, embed_fields, segments)
         zpath = make_zip_for_program(uid, pk_value, row, primary_key, embed_fields, segments, clip_embs, prog_emb)
         zip_paths.append(zpath)
         manifest_rows.append({"uid": uid, "pk": pk_value, "num_clips": len(segments), "zip": Path(zpath).name})
@@ -254,14 +253,15 @@ async def batch_zip(
             master.write(p, arcname=Path(p).name)
         # Write manifest.csv
         if manifest_rows:
+            import io as _io
             dfm = pd.DataFrame(manifest_rows)
-            buf = io.StringIO()
+            buf = _io.StringIO()
             dfm.to_csv(buf, index=False)
             master.writestr("manifest.csv", buf.getvalue())
 
     return {
         "uid": uid,
         "count": len(zip_paths),
-        "master_zip": f"/api/download/{master_path.name}",
-        "zips": [f"/api/download/{Path(p).name}" for p in zip_paths],
+        "master_zip": f"/api/download/zips/{master_path.name}",
+        "zips": [f"/api/download/zips/{uid}/{Path(p).name}" for p in zip_paths],
     }

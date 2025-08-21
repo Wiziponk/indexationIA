@@ -73,9 +73,16 @@ async def upload_ids(excel: UploadFile = File(...)):
     }
 
 
-@router.get("/download/{name}")
-def download(name: str):
-    candidate = DATA_DIR / name
+@router.get("/download/{path:path}")
+def download(path: str):
+    """
+    Allow downloads from DATA_DIR and subfolders (e.g., zips/{uid}.zip),
+    with path traversal protection.
+    """
+    base = DATA_DIR.resolve()
+    candidate = (DATA_DIR / path).resolve()
+    if not str(candidate).startswith(str(base)):
+        raise HTTPException(403, "Forbidden")
     if not candidate.exists() or candidate.suffix not in {".parquet", ".npy", ".zip"}:
         raise HTTPException(404, "Not found")
     return FileResponse(candidate)
