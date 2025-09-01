@@ -260,16 +260,20 @@ def make_zip_for_program(
 ) -> str:
     out_dir = DATA_DIR / "zips" / uid
     out_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = out_dir / f"{pk_value}.zip"
+    # sanitize filename a bit (see item 4)
+    safe_pk = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(pk_value)).strip("_") or "item"
+    zip_path = out_dir / f"{safe_pk}.zip"
 
-    # Prepare small files in-memory
-    program_doc = {
-        "primary_key": primary_key,
-        "pk_value": pk_value,
-        "fields": {f: get_nested_value(program_row, f) for f in embed_fields},
-    }
+    with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        # program metadata & docs
+        program_doc = {
+            "primary_key": primary_key,
+            "pk_value": pk_value,
+            "fields": {f: get_nested_value(program_row, f) for f in embed_fields},
+        }
+        zf.writestr("program.json", json.dumps(program_doc, ensure_ascii=False, indent=2))
 
-    readme = f"""IndexationIA — package for emission {pk_value}
+        readme = f"""IndexationIA — package for emission {pk_value}
 
 Files:
 - program.json             : selected API fields for this emission
@@ -278,40 +282,27 @@ Files:
 - emb_clips.npy            : (num_clips, dim) clip embeddings ({SEG_EMBED_MODEL})
 - emb_program.npy          : (dim,) program embedding ({SEG_EMBED_MODEL})
 - emb_model.txt            : model identifiers used
-
 """
-
-    # Write ZIP — ensure each entry is written exactly once (no duplicates)
-    with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("program.json", json.dumps(program_doc, ensure_ascii=False, indent=2))
         zf.writestr("README.txt", readme)
-        zf.writestr("emb_model.txt", json.dumps({"clip_embed_model": SEG_EMBED_MODEL, "program_embed_model": SEG_EMBED_MODEL}, ensure_ascii=False))
+        zf.writestr("emb_model.txt", json.dumps(
+            {"clip_embed_model": SEG_EMBED_MODEL, "program_embed_model": SEG_EMBED_MODEL},
+            ensure_ascii=False
+        ))
 
-        # clips_meta.jsonl and text files
+        # clip metas + text files
         meta_buf = io.StringIO()
         for i, s in enumerate(segments, start=1):
-            # meta line
             meta_buf.write(json.dumps({
-                "index": i,
-                "start": s.get("start"),
-                "end": s.get("end"),
-                "score": s.get("score"),
-                "title": s.get("title"),
-                "summary": s.get("summary"),
-                "text": s.get("text")
+                "index": i, "start": s.get("start"), "end": s.get("end"),
+                "score": s.get("score"), "title": s.get("title"),
+                "summary": s.get("summary"), "text": s.get("text")
             }, ensure_ascii=False) + "\n")
-            # text file
             header = f"{s.get('title','Segment')}\n{(s.get('summary') or '')}\n\n"
-            body = s.get("text", "")
-            zf.writestr(f"clips/clip_{i:04d}.txt", header + body)
+            zf.writestr(f"clips/clip_{i:04d}.txt", header + (s.get("text") or ""))
         zf.writestr("clips_meta.jsonl", meta_buf.getvalue())
 
-        # embeddings (write once, correctly)
-        buf = io.BytesIO()
-        np.save(buf, clip_embs)
-        zf.writestr("emb_clips.npy", buf.getvalue())
-        buf2 = io.BytesIO()
-        np.save(buf2, prog_emb)
-        zf.writestr("emb_program.npy", buf2.getvalue())
+        # ✅ write numpy arrays correctly (one pass, no duplicates)
+        buf = io.BytesIO(); np.save(buf, clip_embs.astype(np.float32, copy=False)); zf.writestr("emb_clips.npy", buf.getvalue())
+        buf = io.BytesIO(); np.save(buf, prog_emb.astype(np.float32, copy=False));  zf.writestr("emb_program.npy", buf.getvalue())
 
     return str(zip_path)

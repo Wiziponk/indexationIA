@@ -103,6 +103,9 @@
         <div class="col-12">
           <button id="btnBatch">Produce ZIPs for all included emissions</button>
           <span class="small" id="batchLinks"></span>
+          <div id="batchLinks">
+            <p id="batchStatus" style="margin:.5rem 0;color:#555"></p>
+          </div>
         </div>
       </div>
     </div>
@@ -385,25 +388,109 @@ $('#btnPreviewClips').addEventListener('click', async (ev) => {
   done();
 });
 
+// Utils
+async function pollStatus(uid, { intervalMs = 3000, timeoutMs = 30 * 60 * 1000 } = {}) { // 30 minutes
+  const t0 = Date.now();
+  const statusEl = document.getElementById('batchStatus');
+  while (true) {
+    const res = await fetch(`/api/segment/status/${uid}`);
+    if (!res.ok) throw new Error(`Status request failed: ${res.status}`);
+    const st = await res.json();
+
+    if (statusEl) {
+      const text = st.note ? `${st.status}: ${st.note}` : (st.status || 'running');
+      statusEl.textContent = `Batch status — ${text}`;
+    }
+
+    if (st.status === 'done' && st.result) return st.result;
+    if (st.status === 'error') throw new Error(st.note || 'Batch failed');
+
+    if (Date.now() - t0 > timeoutMs) throw new Error('Batch timed out');
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+}
+
+function renderBatchLinks(result) {
+  const container = document.getElementById('batchLinks');
+  if (!container) return;
+
+  const master = result.master_zip || '';
+  const masterName = master ? master.split('/').pop() : '(not produced)';
+  const count = typeof result.count === 'number' ? result.count : (result.zips ? result.zips.length : 0);
+
+  let html = '';
+  if (master) {
+    html += `Master: <a href="${master}" target="_blank" rel="noopener">${masterName}</a> (${count} zips)`;
+  } else {
+    html += `No master zip available (${count} zips)`;
+  }
+  if (Array.isArray(result.zips) && result.zips.length) {
+    html += '<ul>';
+    for (const z of result.zips) {
+      const zn = z.split('/').pop();
+      html += `<li><a href="${z}" target="_blank" rel="noopener">${zn}</a></li>`;
+    }
+    html += '</ul>';
+  }
+  container.innerHTML = html;
+}
+
 // Batch ZIPs
 $('#btnBatch').addEventListener('click', async (ev) => {
   const done = startLoading(ev.currentTarget, "Producing ZIPs…");
-  const mode = document.querySelector('input[name="mode"]:checked').value;
-  const pk = $('#primaryKey').value;
-  const fields = Array.from($('#embedFields').selectedOptions).map(o => o.value);
-  const fd = new FormData();
-  fd.append('mode', mode);
-  fd.append('primary_key', pk);
-  fields.forEach(f => fd.append('embed_fields', f));
-  if (mode === 'excel') { if (!idsToken) { alert('Preview the Excel first'); done(); return; } fd.append('excel_token', idsToken); fd.append('excel_id_col', idsIdCol || ''); }
-  fd.append('keep_ratio', $('#keepRatio').value);
-  const brief = $('#brief').value.trim(); if (brief) fd.append('brief', brief);
-  fd.append('with_titles', 'true');
-  Array.from($('#transcripts').files).forEach(f => fd.append('transcripts', f));
-  const js = await fetchJSON('/api/segment/batch', { method:'POST', body:fd }, ev.currentTarget);
-  $('#batchLinks').innerHTML = `Master: <a href="${js.master_zip}">${js.master_zip.split('/').pop()}</a> (${js.count} zips)`;
-  done();
+  try {
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    const pk = $('#primaryKey').value;
+    const fields = Array.from($('#embedFields').selectedOptions).map(o => o.value);
+    const fd = new FormData();
+    fd.append('mode', mode);
+    fd.append('primary_key', pk);
+    fields.forEach(f => fd.append('embed_fields', f));
+    if (mode === 'excel') {
+      if (!idsToken) { alert('Preview the Excel first'); return; }
+      fd.append('excel_token', idsToken);
+      fd.append('excel_id_col', idsIdCol || '');
+    }
+    fd.append('keep_ratio', $('#keepRatio').value);
+    const brief = $('#brief').value.trim(); if (brief) fd.append('brief', brief);
+    fd.append('with_titles', 'true');
+    Array.from($('#transcripts').files).forEach(f => fd.append('transcripts', f));
+
+    const js = await fetchJSON('/api/segment/batch', { method:'POST', body:fd }, ev.currentTarget);
+
+    // Backward-compat: synchronous shape (old server)
+    if (js && js.master_zip) {
+      renderBatchLinks(js);
+      return;
+    }
+
+    // New async shape: { uid, status: 'queued' }
+    if (js && js.uid) {
+      // optional: show a status line
+      if (!document.getElementById('batchStatus')) {
+        const p = document.createElement('p');
+        p.id = 'batchStatus';
+        p.textContent = 'Batch status: queued…';
+        $('#batchLinks').before(p);
+      }
+      const result = await pollStatus(js.uid);
+      renderBatchLinks(result);
+      // clear status text
+      const statusEl = document.getElementById('batchStatus');
+      if (statusEl) statusEl.remove();
+      return;
+    }
+
+    // Unexpected shape
+    throw new Error('Unexpected response from /api/segment/batch');
+  } catch (err) {
+    console.error(err);
+    alert(err.message || String(err));
+  } finally {
+    done();
+  }
 });
+
 
 // Cluster — clips
 $('#btnClusterClips').addEventListener('click', async (ev) => {

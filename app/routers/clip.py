@@ -9,7 +9,9 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Form, UploadFile, File, HTTPException
+import threading, asyncio
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Form, UploadFile, File
+from ..services.jobs import new_job, set_status, set_result, get_job
 
 from ..config import DATA_DIR, CLIP_KEEP_RATIO_DEFAULT
 from ..services.api_client import fetch_all_programs
@@ -192,6 +194,8 @@ async def batch_zip(
     keep_ratio: float = Form(CLIP_KEEP_RATIO_DEFAULT),
     brief: Optional[str] = Form(None),
     with_titles: bool = Form(True),
+    limit: int = Form(0),                  
+    max_segments_per_item: int = Form(0), 
     transcripts: List[UploadFile] = File(default=[]),
 ):
     """Run clipper for ALL included items and write one ZIP per emission + a master ZIP."""
@@ -230,38 +234,71 @@ async def batch_zip(
     if df.empty:
         raise HTTPException(400, "No items with transcripts — nothing to process.")
 
-    zip_paths: List[str] = []
-    manifest_rows: List[Dict[str, Any]] = []
+    if limit and limit > 0:
+        df = df.head(limit)
 
-    for _, r in df.iterrows():
-        row = r.to_dict()
-        pk_value = str(row[pk_col])
-        tx = row["__tx"]
-        segments = await segment_text(tx, keep_ratio=keep_ratio, with_titles=with_titles, brief=brief)
-        if not segments:
-            continue
-        clip_embs = await embed_clips(segments)
-        prog_emb  = await program_embedding(row, primary_key, embed_fields, segments)
-        zpath = make_zip_for_program(uid, pk_value, row, primary_key, embed_fields, segments, clip_embs, prog_emb)
-        zip_paths.append(zpath)
-        manifest_rows.append({"uid": uid, "pk": pk_value, "num_clips": len(segments), "zip": Path(zpath).name})
+    uid = new_job()
+    set_status(uid, "queued")
+    # 🔑 Launch in a real background thread
+    _start_batch_thread(uid, df, pk_col, primary_key, embed_fields, keep_ratio, brief, with_titles, t_map)
+    # respond immediately; front-end will poll /segment/status/{uid}
+    return {"uid": uid, "status": "queued"}
 
-    # Master ZIP that contains all program ZIPs
-    master_path = DATA_DIR / "zips" / f"{uid}.zip"
-    with zipfile.ZipFile(master_path, "w", compression=zipfile.ZIP_DEFLATED) as master:
-        for p in zip_paths:
-            master.write(p, arcname=Path(p).name)
-        # Write manifest.csv
-        if manifest_rows:
-            import io as _io
-            dfm = pd.DataFrame(manifest_rows)
-            buf = _io.StringIO()
-            dfm.to_csv(buf, index=False)
-            master.writestr("manifest.csv", buf.getvalue())
 
-    return {
-        "uid": uid,
-        "count": len(zip_paths),
-        "master_zip": f"/api/download/zips/{master_path.name}",
-        "zips": [f"/api/download/zips/{uid}/{Path(p).name}" for p in zip_paths],
-    }
+async def _run_batch_async(uid, df, pk_col, primary_key, embed_fields, keep_ratio, brief, with_titles, t_map):
+    try:
+        total = len(df)
+        set_status(uuid, "running", f"starting… 0/{total}")
+        out_dir = DATA_DIR / "zips" / uid
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        zip_paths = []
+        manifest = []
+        for i, (_, r) in enumerate(df.iterrows(), start=1):
+            row = r.to_dict()
+            pk_value = str(row[pk_col])
+            tx = t_map.get(pk_value, "").strip()
+            if not tx:
+                set_status(uid, "running", f"skip (no transcript) {i}/{total}")
+                await asyncio.sleep(0)
+                continue
+            segs = await segment_text(tx, keep_ratio=keep_ratio, with_titles=with_titles, brief=brief)
+            if not segs: 
+                continue
+            clip_embs = await embed_clips(segs)
+            prog_emb  = await program_embedding(row, primary_key, embed_fields, segs)
+            zpath = make_zip_for_program(uid, pk_value, row, primary_key, embed_fields, segs, clip_embs, prog_emb)
+            zip_paths.append(zpath)
+            manifest.append({"uid": uid, "pk": pk_value, "num_clips": len(segs), "zip": Path(zpath).name})
+            set_status(uid, "running", f"processed {i}/{total}")
+            await asyncio.sleep(0)  # tiny yield back to loop
+
+        master_path = DATA_DIR / "zips" / f"{uid}.zip"
+        with zipfile.ZipFile(master_path, "w", compression=zipfile.ZIP_DEFLATED) as master:
+            for p in zip_paths:
+                master.write(p, arcname=Path(p).name)
+            if manifest:
+                import io
+                import pandas as pd
+                buf = io.StringIO(); pd.DataFrame(manifest).to_csv(buf, index=False)
+                master.writestr("manifest.csv", buf.getvalue())
+
+        set_result(uid, {
+            "uid": uid,
+            "count": len(zip_paths),
+            "master_zip": f"/api/download/zips/{master_path.name}",
+            "zips": [f"/api/download/zips/{uid}/{Path(p).name}" for p in zip_paths],
+        })
+    except Exception as e:
+        set_status(uid, "error", str(e))
+
+def _start_batch_thread(uid, df, pk_col, primary_key, embed_fields, keep_ratio, brief, with_titles, t_map):
+    def runner():
+        # new thread → safe to create and run a private event loop
+        asyncio.run(_run_batch_async(uid, df, pk_col, primary_key, embed_fields, keep_ratio, brief, with_titles, t_map))
+    t = threading.Thread(target=runner, name=f"batch-{uid}", daemon=True)
+    t.start()
+
+@router.get("/segment/status/{uid}")
+async def batch_status(uid: str):
+    return get_job(uid)
