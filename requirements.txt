@@ -16,3 +16,6 @@ openpyxl
 xlrd<2.0
 python-dotenv
 stopwordsiso
+SQLAlchemy
+python-multipart
+setuptools

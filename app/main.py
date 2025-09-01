@@ -11,6 +11,7 @@ from .routers.generate import router as generate_router      # kept (dataset leg
 from .routers.cluster import router as cluster_router        # kept (legacy clustering)
 from .routers.clip import router as clip_router              # NEW: clips flow + batch zips
 from .routers.cluster_zip import router as cluster_zip_router# NEW: cluster from zips
+from .routers.datasets import router as datasets_router        # NEW: datasets CRUD
 from .config import BASE_DIR
 
 logger = logging.getLogger("uvicorn.error")
@@ -38,6 +39,7 @@ app.include_router(generate_router, prefix="/api", tags=["generate"])
 app.include_router(cluster_router, prefix="/api", tags=["cluster"])
 app.include_router(clip_router, prefix="/api", tags=["clips"])
 app.include_router(cluster_zip_router, prefix="/api", tags=["cluster-zips"])
+app.include_router(datasets_router, prefix="/api", tags=["datasets"])
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
