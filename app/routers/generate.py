@@ -15,6 +15,8 @@ from ..services.embeddings import batch_embed, build_text_from_fields
 from ..services.transcripts import load_transcripts
 from ..services.storage import save_dataset_files
 from ..services.utils import get_nested_value
+from ..database import SessionLocal
+from ..models import Dataset
 
 router = APIRouter()
 
@@ -131,6 +133,7 @@ async def run_generate(
     excel_token: Optional[str] = Form(None),
     excel_id_col: Optional[str] = Form(None),
     transcripts: List[UploadFile] = File(default=[]),
+    label: Optional[str] = Form(None),
 ):
     if not primary_key or not str(primary_key).strip():
         raise HTTPException(400, "Please choose a Primary key.")
@@ -195,6 +198,11 @@ async def run_generate(
 
     uid = str(uuid.uuid4())[:8]
     raw_name, emb_name = save_dataset_files(df, X, uid)
+    cfg = {"mode": mode, "primary_key": primary_key, "embed_fields": embed_fields}
+    with SessionLocal() as db:
+        ds = Dataset(uid=uid, raw_path=raw_name, emb_path=emb_name, label=label, config=cfg)
+        db.add(ds)
+        db.commit()
     return {
         "uid": uid,
         "parquet": f"/api/download/{raw_name}",
