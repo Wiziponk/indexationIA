@@ -1,17 +1,58 @@
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, JSON
-from .database import Base
+from typing import Optional
+from sqlmodel import SQLModel, Field, Column
+from sqlalchemy import JSON
 
-class Dataset(Base):
-    __tablename__ = "datasets"
+class Project(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    primary_key: str
+    # Store selected embed fields as JSON
+    embed_fields: list[str] = Field(sa_column=Column(JSON))
+    # Defaults & knobs
+    keep_ratio: float = 0.6
+    with_titles: bool = True
+    brief: Optional[str] = None
+    mode: str = "api"           # "api" | "excel"
+    excel_id_col: Optional[str] = None
 
-    id = Column(Integer, primary_key=True, index=True)
-    uid = Column(String, unique=True, index=True, nullable=False)
-    label = Column(String, nullable=True)
-    raw_path = Column(String, nullable=False)
-    emb_path = Column(String, nullable=False)
-    config = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+class Run(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="project.id")
+    uid: str  # job uid (from app.services.jobs)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    status: str = "queued"  # queued|running|done|error
+    note: Optional[str] = None
+    master_zip_path: Optional[str] = None
+
+class Program(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="project.id")
+    pk_value: str
+    # Selected fields snapshot for this emission (what we embedded)
+    fields_json: dict = Field(sa_column=Column(JSON))
+    transcript_name: Optional[str] = None
+    transcript_text: Optional[str] = None
+    num_clips: int = 0
+    last_zip_path: Optional[str] = None
+
+class Clip(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    program_id: int = Field(foreign_key="program.id")
+    idx: int
+    start: Optional[int] = None
+    end: Optional[int] = None
+    score: float = 0.0
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    text: Optional[str] = None
+
+class Artifact(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    run_id: int = Field(foreign_key="run.id")
+    kind: str  # "zip" | "parquet" | "npy" etc.
+    path: str
+

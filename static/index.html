@@ -239,6 +239,47 @@ loadDatasets();
     </div>
   </div>
 
+  <!-- DB LIBRARY -->
+  <div class="container">
+    <div class="card">
+      <h2>3) Library (DB)</h2>
+      <div class="grid">
+        <div class="col-12">
+          <button id="btnDbRefresh">Refresh projects</button>
+        </div>
+        <div class="col-6">
+          <label>Project</label>
+          <select id="dbProjects"></select>
+        </div>
+        <div class="col-6" style="padding-top:28px;">
+          <button id="btnDbLoadPrograms" class="secondary">Load programs</button>
+        </div>
+        <div class="col-12">
+          <label>Programs</label>
+          <select id="dbPrograms" size="8"></select>
+        </div>
+        <div class="col-12">
+          <button id="btnDbOpenProgram">Open selected program</button>
+          <span class="small" id="dbProgInfo"></span>
+        </div>
+        <div class="col-12">
+          <table class="table" id="dbClipsTable"></table>
+        </div>
+        <div class="col-6">
+          <button id="btnDbSaveEdits">Save clip edits</button>
+        </div>
+        <div class="col-6">
+          <div class="flex" style="justify-content:flex-end; gap:8px;">
+            <label>Keep ratio <input type="number" id="dbKeepRatio" step="0.05" value="0.6" style="width:90px;margin-left:6px;"></label>
+            <label><input type="checkbox" id="dbWithTitles" checked> Name clips</label>
+            <input type="text" id="dbBrief" placeholder="brief (optional)" style="width:220px;">
+            <button id="btnDbRerun" class="secondary">Re-run program</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Debug drawer -->
   <div id="debugWrap">
     <div id="debugHead">🛠 Debug (click)</div>
@@ -591,6 +632,82 @@ function drawChart(js) {
   const tbody = $('#summary tbody'); tbody.innerHTML='';
   rows.forEach(r => { const tr=document.createElement('tr'); tr.innerHTML = `<td>${r.c}</td><td>${r.n}</td>`; tbody.appendChild(tr); });
 }
+
+// ---------------- DB UI ----------------
+let DB_STATE = { projects: [], programs: [], currentProgram: null, currentClips: [] };
+
+async function dbRefreshProjects() {
+  const js = await fetchJSON('/api/db/projects');
+  DB_STATE.projects = js.projects || [];
+  const sel = $('#dbProjects'); sel.innerHTML = '';
+  DB_STATE.projects.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = `${p.name} (id:${p.id}, ${p.programs} programs)`;
+    sel.appendChild(o);
+  });
+}
+$('#btnDbRefresh').addEventListener('click', dbRefreshProjects);
+
+$('#btnDbLoadPrograms').addEventListener('click', async () => {
+  const pid = $('#dbProjects').value; if (!pid) { alert('Pick a project'); return; }
+  const js = await fetchJSON(`/api/db/programs?project_id=${pid}`);
+  DB_STATE.programs = js.programs || [];
+  const sel = $('#dbPrograms'); sel.innerHTML = '';
+  DB_STATE.programs.forEach(pr => {
+    const o = document.createElement('option');
+    o.value = pr.id; o.textContent = `${pr.pk_value} (${pr.num_clips} clips)`;
+    sel.appendChild(o);
+  });
+});
+
+$('#btnDbOpenProgram').addEventListener('click', async () => {
+  const prid = $('#dbPrograms').value; if (!prid) { alert('Pick a program'); return; }
+  const js = await fetchJSON(`/api/db/programs/${prid}`);
+  DB_STATE.currentProgram = js.program || null;
+  DB_STATE.currentClips = js.clips || [];
+  $('#dbProgInfo').textContent = DB_STATE.currentProgram ? `pk=${DB_STATE.currentProgram.pk_value}, zip=${DB_STATE.currentProgram.last_zip_path || '(n/a)'}` : '';
+  const tbl = $('#dbClipsTable'); tbl.innerHTML = '';
+  if (DB_STATE.currentClips.length) {
+    const thead = document.createElement('thead'); const trh = document.createElement('tr');
+    ['#','title','summary','score'].forEach(h => { const th=document.createElement('th'); th.textContent=h; trh.appendChild(th); }); thead.appendChild(trh); tbl.appendChild(thead);
+    const tb = document.createElement('tbody');
+    DB_STATE.currentClips.forEach(cl => {
+      const tr = document.createElement('tr'); tr.dataset.id = cl.id;
+      tr.innerHTML = `
+        <td>${cl.idx}</td>
+        <td><input data-k="title" value="${(cl.title||'').replace(/"/g,'&quot;')}" /></td>
+        <td><textarea data-k="summary" rows="2">${cl.summary||''}</textarea></td>
+        <td><input data-k="score" type="number" step="0.001" value="${(cl.score ?? 0).toFixed(3)}" style="width:100px"/></td>`;
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+  }
+});
+
+$('#btnDbSaveEdits').addEventListener('click', async () => {
+  const rows = Array.from(document.querySelectorAll('#dbClipsTable tbody tr'));
+  for (const tr of rows) {
+    const id = tr.dataset.id;
+    const payload = {};
+    Array.from(tr.querySelectorAll('input,textarea')).forEach(el => { payload[el.dataset.k] = el.value; });
+    await fetchJSON(`/api/db/clips/${id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+  }
+  alert('Saved');
+});
+
+$('#btnDbRerun').addEventListener('click', async () => {
+  const pr = DB_STATE.currentProgram; if (!pr) { alert('Open a program first'); return; }
+  const body = {
+    keep_ratio: parseFloat($('#dbKeepRatio').value || '0.6'),
+    with_titles: $('#dbWithTitles').checked ? true : false,
+  };
+  const b = $('#dbBrief').value.trim(); if (b) body.brief = b;
+  const js = await fetchJSON(`/api/db/programs/${pr.id}/rerun`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  alert(`Re-run done: ${js.num_clips} clips\nZIP: ${js.zip}`);
+});
+
+// Load projects once on boot
+dbRefreshProjects().catch(()=>{});
 
 async function loadDatasets() {
   const table = document.getElementById('datasetsTable');

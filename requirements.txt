@@ -16,6 +16,7 @@ openpyxl
 xlrd<2.0
 python-dotenv
 stopwordsiso
-SQLAlchemy
+sqlmodel>=0.0.18
+sqlalchemy>=2.0
 python-multipart
 setuptools
