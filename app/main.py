@@ -13,6 +13,8 @@ from .routers.clip import router as clip_router              # NEW: clips flow +
 from .routers.cluster_zip import router as cluster_zip_router# NEW: cluster from zips
 from .routers.datasets import router as datasets_router        # NEW: datasets CRUD
 from .config import BASE_DIR
+from .routers.db import router as db_router                  # NEW: DB CRUD
+from .db import init_db
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -40,9 +42,15 @@ app.include_router(cluster_router, prefix="/api", tags=["cluster"])
 app.include_router(clip_router, prefix="/api", tags=["clips"])
 app.include_router(cluster_zip_router, prefix="/api", tags=["cluster-zips"])
 app.include_router(datasets_router, prefix="/api", tags=["datasets"])
+app.include_router(db_router, prefix="/api/db", tags=["db"])
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 def index():
     return FileResponse(str(BASE_DIR / "static" / "index.html"))
+
+@app.on_event("startup")
+def _startup():
+    # Create SQLite schema on boot
+    init_db()
