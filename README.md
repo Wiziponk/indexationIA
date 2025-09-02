@@ -16,7 +16,6 @@ export EDUC_API_BASE="https://educ.arte.tv/api/list/programs"
 # optional: export EDUC_API_TOKEN="..."
 
 # Run
-uvicorn app.main:app --reload --port 5000
 python -m dotenv run -- uvicorn app.main:app --reload --port 5000
 ```
 
