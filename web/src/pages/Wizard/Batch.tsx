@@ -1,18 +1,6 @@
 import { useEffect, useState } from "react";
 import { API_BASE } from "../../lib/api";
-
-interface SegmentBatchResult {
-  uid: string;
-  count: number;
-  master_zip: string;
-  zips: string[];
-}
-
-interface JobStatus {
-  status: string;
-  note?: string;
-  result?: SegmentBatchResult;
-}
+import { useJobs } from "../../components/Jobs";
 
 interface Props {
   primaryKey: string;
@@ -43,10 +31,16 @@ export default function Batch({
   withTitles,
   setWithTitles,
 }: Props) {
-  const [job, setJob] = useState<JobStatus | null>(null);
   const [uid, setUid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const { addJob, jobs } = useJobs();
+  const job = jobs.find((j) => j.uid === uid) || null;
+  const [completed, setCompleted] = useState(false);
+
+  useEffect(() => {
+    if (uid && !job) setCompleted(true);
+  }, [uid, job]);
 
   const launch = async () => {
     const form = new FormData();
@@ -71,27 +65,13 @@ export default function Batch({
       if (!res.ok) throw new Error(await res.text());
       const json = (await res.json()) as { uid: string; status: string };
       setUid(json.uid);
-      setJob({ status: json.status });
+      addJob(json.uid);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (!uid) return;
-    const interval = setInterval(async () => {
-      const res = await fetch(`${API_BASE}/segment/status/${uid}`);
-      if (!res.ok) return;
-      const json = (await res.json()) as JobStatus;
-      setJob(json);
-      if (json.status === "done") {
-        clearInterval(interval);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [uid]);
 
   return (
     <div className="space-y-4">
@@ -138,35 +118,7 @@ export default function Batch({
           {job.note ? ` – ${job.note}` : ""}
         </p>
       )}
-      {job?.status === "done" && job.result && (
-        <div className="space-y-2">
-          <p>Processed {job.result.count} items</p>
-          <div>
-            <a
-              className="text-blue-600 underline"
-              href={job.result.master_zip}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Download master ZIP
-            </a>
-          </div>
-          <ul className="list-disc pl-4">
-            {job.result.zips.map((z) => (
-              <li key={z}>
-                <a
-                  className="text-blue-600 underline"
-                  href={z}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {z}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {completed && <p>Batch completed. See Downloads panel.</p>}
     </div>
   );
 }
