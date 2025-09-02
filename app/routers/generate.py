@@ -15,7 +15,8 @@ from ..services.embeddings import batch_embed, build_text_from_fields
 from ..services.transcripts import load_transcripts
 from ..services.storage import save_dataset_files
 from ..services.utils import get_nested_value
-from ..database import SessionLocal
+from sqlmodel import Session
+from ..db import engine
 from ..models import Dataset
 
 router = APIRouter()
@@ -199,10 +200,10 @@ async def run_generate(
     uid = str(uuid.uuid4())[:8]
     raw_name, emb_name = save_dataset_files(df, X, uid)
     cfg = {"mode": mode, "primary_key": primary_key, "embed_fields": embed_fields}
-    with SessionLocal() as db:
+    with Session(engine) as session:
         ds = Dataset(uid=uid, raw_path=raw_name, emb_path=emb_name, label=label, config=cfg)
-        db.add(ds)
-        db.commit()
+        session.add(ds)
+        session.commit()
     return {
         "uid": uid,
         "parquet": f"/api/download/{raw_name}",

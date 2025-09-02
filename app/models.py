@@ -7,19 +7,15 @@ from typing import Optional
 from sqlmodel import SQLModel, Field, Column
 from sqlalchemy import JSON
 
-# --- SQLAlchemy ORM model (legacy datasets API expects this) ---
-from sqlalchemy import Column as SAColumn, String, DateTime
-from .database import Base
 
-class Dataset(Base):
-    __tablename__ = "datasets"
-    uid = SAColumn(String, primary_key=True)
-    raw_path = SAColumn(String, nullable=False)
-    emb_path = SAColumn(String, nullable=False)
-    label = SAColumn(String, nullable=True)
-    created_at = SAColumn(DateTime, default=datetime.utcnow)
+class Dataset(SQLModel, table=True):
+    uid: str = Field(primary_key=True)
+    raw_path: str
+    emb_path: str
+    label: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
     # store the original config used to create the dataset
-    config = SAColumn(JSON, default=dict)
+    config: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
 class Project(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

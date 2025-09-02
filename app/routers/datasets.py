@@ -7,16 +7,16 @@ import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlmodel import Session, select, SQLModel
 
-from ..database import get_db, Base, engine
+from ..db import get_session, engine
 from ..models import Dataset
 from ..services.api_client import fetch_all_programs
 from ..services.embeddings import batch_embed, build_text_from_fields
 from ..services.storage import save_dataset_files
 from ..services.utils import get_nested_value
 
-Base.metadata.create_all(bind=engine)
+SQLModel.metadata.create_all(bind=engine)
 
 router = APIRouter()
 def _ds_to_dict(ds: Dataset) -> dict:
@@ -33,33 +33,38 @@ def _ds_to_dict(ds: Dataset) -> dict:
 class DatasetUpdate(BaseModel):
     label: Optional[str] = None
 
+
 @router.get("/datasets")
-def list_datasets(db: Session = Depends(get_db)):
-    rows = db.query(Dataset).order_by(Dataset.created_at.desc()).all()
+def list_datasets(session: Session = Depends(get_session)):
+    rows = session.exec(select(Dataset).order_by(Dataset.created_at.desc())).all()
     return [_ds_to_dict(d) for d in rows]
 
+
 @router.put("/datasets/{uid}")
-def update_dataset(uid: str, payload: DatasetUpdate, db: Session = Depends(get_db)):
-    ds = db.query(Dataset).filter(Dataset.uid == uid).first()
+def update_dataset(uid: str, payload: DatasetUpdate, session: Session = Depends(get_session)):
+    ds = session.get(Dataset, uid)
     if not ds:
         raise HTTPException(404, "Not found")
     ds.label = payload.label
-    db.commit()
-    db.refresh(ds)
+    session.add(ds)
+    session.commit()
+    session.refresh(ds)
     return _ds_to_dict(ds)
 
+
 @router.delete("/datasets/{uid}", status_code=204)
-def delete_dataset(uid: str, db: Session = Depends(get_db)):
-    ds = db.query(Dataset).filter(Dataset.uid == uid).first()
+def delete_dataset(uid: str, session: Session = Depends(get_session)):
+    ds = session.get(Dataset, uid)
     if not ds:
         raise HTTPException(404, "Not found")
-    db.delete(ds)
-    db.commit()
+    session.delete(ds)
+    session.commit()
     return
 
+
 @router.post("/datasets/{uid}/rerun")
-async def rerun_dataset(uid: str, db: Session = Depends(get_db)):
-    ds = db.query(Dataset).filter(Dataset.uid == uid).first()
+async def rerun_dataset(uid: str, session: Session = Depends(get_session)):
+    ds = session.get(Dataset, uid)
     if not ds:
         raise HTTPException(404, "Not found")
     cfg = ds.config or {}
@@ -90,7 +95,7 @@ async def rerun_dataset(uid: str, db: Session = Depends(get_db)):
     new_uid = str(uuid.uuid4())[:8]
     raw_name, emb_name = save_dataset_files(df, X, new_uid)
     new_ds = Dataset(uid=new_uid, raw_path=raw_name, emb_path=emb_name, config=cfg, label=ds.label)
-    db.add(new_ds)
-    db.commit()
-    db.refresh(new_ds)
-    return new_ds
+    session.add(new_ds)
+    session.commit()
+    session.refresh(new_ds)
+    return _ds_to_dict(new_ds)
