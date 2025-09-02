@@ -1,16 +1,17 @@
 from fastapi.testclient import TestClient
+from sqlmodel import SQLModel, Session
 from app.main import app
-from app.database import SessionLocal, Base, engine
+from app.db import engine
 from app.models import Dataset
 
 client = TestClient(app)
 
 # Prepare database with a sample dataset
-Base.metadata.drop_all(bind=engine)
-Base.metadata.create_all(bind=engine)
-with SessionLocal() as db:
-    db.add(Dataset(uid='u1', raw_path='r.parquet', emb_path='e.npy', config={}))
-    db.commit()
+SQLModel.metadata.drop_all(bind=engine)
+SQLModel.metadata.create_all(bind=engine)
+with Session(engine) as session:
+    session.add(Dataset(uid='u1', raw_path='r.parquet', emb_path='e.npy', config={}))
+    session.commit()
 
 def test_list_datasets():
     r = client.get('/api/datasets')
