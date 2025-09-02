@@ -1,24 +1,35 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse
 import logging
 
-from .routers.common import router as common_router
-from .routers.generate import router as generate_router      # kept (dataset legacy)
-from .routers.cluster import router as cluster_router        # kept (legacy clustering)
-from .routers.clip import router as clip_router              # NEW: clips flow + batch zips
-from .routers.cluster_zip import router as cluster_zip_router# NEW: cluster from zips
-from .routers.datasets import router as datasets_router        # NEW: datasets CRUD
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+
 from .config import BASE_DIR
-from .routers.db import router as db_router                  # NEW: DB CRUD
 from .db import init_db
+from .routers.clip import router as clip_router  # NEW: clips flow + batch zips
+from .routers.cluster import router as cluster_router  # kept (legacy clustering)
+from .routers.cluster_zip import router as cluster_zip_router  # NEW: cluster from zips
+from .routers.common import router as common_router
+from .routers.datasets import router as datasets_router  # NEW: datasets CRUD
+from .routers.db import router as db_router  # NEW: DB CRUD
+from .routers.generate import router as generate_router  # kept (dataset legacy)
 
 logger = logging.getLogger("uvicorn.error")
 
-app = FastAPI(title="Indexation v3", version="3.0.0")
+tags_metadata = [
+    {"name": "common", "description": "Health checks and helpers"},
+    {"name": "generate", "description": "Legacy dataset generation"},
+    {"name": "cluster", "description": "Legacy clustering endpoints"},
+    {"name": "clips", "description": "Clip segmentation workflow"},
+    {"name": "cluster-zips", "description": "Cluster embeddings from uploaded ZIPs"},
+    {"name": "datasets", "description": "Dataset CRUD operations"},
+    {"name": "db", "description": "Project and library database"},
+]
+
+app = FastAPI(title="Indexation v3", version="3.0.0", openapi_tags=tags_metadata)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,6 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.middleware("http")
 async def log_errors(request: Request, call_next):
     try:
@@ -35,6 +47,7 @@ async def log_errors(request: Request, call_next):
     except Exception:
         logger.exception("Unhandled error for %s %s", request.method, request.url)
         raise
+
 
 app.include_router(common_router, prefix="/api", tags=["common"])
 app.include_router(generate_router, prefix="/api", tags=["generate"])
@@ -46,9 +59,11 @@ app.include_router(db_router, prefix="/api/db", tags=["db"])
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     return FileResponse(str(BASE_DIR / "static" / "index.html"))
+
 
 @app.on_event("startup")
 def _startup():

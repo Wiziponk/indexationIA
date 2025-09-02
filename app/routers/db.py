@@ -1,25 +1,37 @@
 from __future__ import annotations
 
-import json
 import uuid
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlmodel import Session, select, delete
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import func
+from sqlmodel import Session, delete, select
 
-
-from ..db import get_session, engine
-from ..models import Project, Program, Clip, Run, Artifact
-from ..services.utils import get_nested_value
-from ..services.clipmaker import segment_text, embed_clips, program_embedding, make_zip_for_program
-from ..config import DATA_DIR
+from ..db import get_session
+from ..models import Clip, Program, Project
+from ..schemas import (
+    ClipUpdateResponse,
+    ErrorResponse,
+    ProgramDetailResponse,
+    ProgramRerunResponse,
+    ProgramsResponse,
+    ProjectsResponse,
+)
+from ..services.clipmaker import (
+    embed_clips,
+    make_zip_for_program,
+    program_embedding,
+    segment_text,
+)
 
 router = APIRouter()
 
+ERROR_RESPONSES = {400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}}
+
+
 # ---------- Projects ----------
-@router.get("/projects")
+@router.get("/projects", response_model=ProjectsResponse, responses=ERROR_RESPONSES)
 def list_projects(session: Session = Depends(get_session)):
     projects = session.exec(select(Project).order_by(Project.created_at.desc())).all()
     rows = []
@@ -28,30 +40,57 @@ def list_projects(session: Session = Depends(get_session)):
             select(func.count()).select_from(Program).where(Program.project_id == p.id)
         ).scalar_one()[0]
 
-        rows.append({
-            "id": p.id, "name": p.name, "created_at": p.created_at.isoformat(),
-            "primary_key": p.primary_key, "embed_fields": p.embed_fields,
-            "keep_ratio": p.keep_ratio, "with_titles": p.with_titles, "brief": p.brief,
-            "mode": p.mode, "excel_id_col": p.excel_id_col,
-            "programs": n,
-        })
+        rows.append(
+            {
+                "id": p.id,
+                "name": p.name,
+                "created_at": p.created_at.isoformat(),
+                "primary_key": p.primary_key,
+                "embed_fields": p.embed_fields,
+                "keep_ratio": p.keep_ratio,
+                "with_titles": p.with_titles,
+                "brief": p.brief,
+                "mode": p.mode,
+                "excel_id_col": p.excel_id_col,
+                "programs": n,
+            }
+        )
     return {"projects": rows}
 
-# ---------- Programs ----------
-@router.get("/programs")
-def list_programs(project_id: int, session: Session = Depends(get_session)):
-    progs = session.exec(select(Program).where(Program.project_id == project_id).order_by(Program.pk_value)).all()
-    return {"programs": [
-        {"id": pr.id, "pk_value": pr.pk_value, "num_clips": pr.num_clips, "last_zip_path": pr.last_zip_path}
-        for pr in progs
-    ]}
 
-@router.get("/programs/{program_id}")
+# ---------- Programs ----------
+@router.get("/programs", response_model=ProgramsResponse, responses=ERROR_RESPONSES)
+def list_programs(project_id: int, session: Session = Depends(get_session)):
+    progs = session.exec(
+        select(Program)
+        .where(Program.project_id == project_id)
+        .order_by(Program.pk_value)
+    ).all()
+    return {
+        "programs": [
+            {
+                "id": pr.id,
+                "pk_value": pr.pk_value,
+                "num_clips": pr.num_clips,
+                "last_zip_path": pr.last_zip_path,
+            }
+            for pr in progs
+        ]
+    }
+
+
+@router.get(
+    "/programs/{program_id}",
+    response_model=ProgramDetailResponse,
+    responses=ERROR_RESPONSES,
+)
 def get_program(program_id: int, session: Session = Depends(get_session)):
     pr = session.get(Program, program_id)
     if not pr:
         raise HTTPException(404, "Program not found")
-    clips = session.exec(select(Clip).where(Clip.program_id == program_id).order_by(Clip.idx)).all()
+    clips = session.exec(
+        select(Clip).where(Clip.program_id == program_id).order_by(Clip.idx)
+    ).all()
     return {
         "program": {
             "id": pr.id,
@@ -63,14 +102,25 @@ def get_program(program_id: int, session: Session = Depends(get_session)):
             "last_zip_path": pr.last_zip_path,
         },
         "clips": [
-            {"id": c.id, "idx": c.idx, "start": c.start, "end": c.end, "score": c.score,
-             "title": c.title, "summary": c.summary, "text": c.text}
+            {
+                "id": c.id,
+                "idx": c.idx,
+                "start": c.start,
+                "end": c.end,
+                "score": c.score,
+                "title": c.title,
+                "summary": c.summary,
+                "text": c.text,
+            }
             for c in clips
-        ]
+        ],
     }
 
+
 # ---------- Clips ----------
-@router.patch("/clips/{clip_id}")
+@router.patch(
+    "/clips/{clip_id}", response_model=ClipUpdateResponse, responses=ERROR_RESPONSES
+)
 def update_clip(
     clip_id: int,
     payload: dict = Body(...),
@@ -85,10 +135,24 @@ def update_clip(
     session.add(c)
     session.commit()
     session.refresh(c)
-    return {"ok": True, "clip": {"id": c.id, "idx": c.idx, "title": c.title, "summary": c.summary, "score": c.score}}
+    return {
+        "ok": True,
+        "clip": {
+            "id": c.id,
+            "idx": c.idx,
+            "title": c.title,
+            "summary": c.summary,
+            "score": c.score,
+        },
+    }
+
 
 # ---------- Rerun segmentation for one program ----------
-@router.post("/programs/{program_id}/rerun")
+@router.post(
+    "/programs/{program_id}/rerun",
+    response_model=ProgramRerunResponse,
+    responses=ERROR_RESPONSES,
+)
 async def rerun_program(
     program_id: int,
     keep_ratio: Optional[float] = Body(None),
@@ -111,28 +175,51 @@ async def rerun_program(
     eff_brief = brief if (brief is not None and brief.strip()) else project.brief
 
     # Segment → embed → program embed
-    segs = await segment_text(pr.transcript_text, keep_ratio=eff_keep, with_titles=eff_titles, brief=eff_brief)
+    segs = await segment_text(
+        pr.transcript_text, keep_ratio=eff_keep, with_titles=eff_titles, brief=eff_brief
+    )
     clip_embs = await embed_clips(segs)
     program_row = pr.fields_json or {}
-    prog_emb = await program_embedding(program_row, project.primary_key, project.embed_fields, segs)
+    prog_emb = await program_embedding(
+        program_row, project.primary_key, project.embed_fields, segs
+    )
 
     # Persist: replace old clips
     session.exec(delete(Clip).where(Clip.program_id == pr.id))
     for i, s in enumerate(segs, start=1):
-        session.add(Clip(
-            program_id=pr.id, idx=i,
-            start=s.get("start"), end=s.get("end"),
-            score=float(s.get("score", 0.0)),
-            title=s.get("title"), summary=s.get("summary"), text=s.get("text"),
-        ))
+        session.add(
+            Clip(
+                program_id=pr.id,
+                idx=i,
+                start=s.get("start"),
+                end=s.get("end"),
+                score=float(s.get("score", 0.0)),
+                title=s.get("title"),
+                summary=s.get("summary"),
+                text=s.get("text"),
+            )
+        )
     pr.num_clips = len(segs)
 
     # Export a fresh program ZIP for this rerun
     uid = "rerun-" + uuid.uuid4().hex[:6]
-    zpath = make_zip_for_program(uid, pr.pk_value, program_row, project.primary_key, project.embed_fields, segs, clip_embs, prog_emb)
+    zpath = make_zip_for_program(
+        uid,
+        pr.pk_value,
+        program_row,
+        project.primary_key,
+        project.embed_fields,
+        segs,
+        clip_embs,
+        prog_emb,
+    )
     pr.last_zip_path = f"/api/download/zips/{uid}/{Path(zpath).name}"
 
     session.add(pr)
     session.commit()
-    return {"ok": True, "program_id": pr.id, "num_clips": pr.num_clips, "zip": pr.last_zip_path}
-
+    return {
+        "ok": True,
+        "program_id": pr.id,
+        "num_clips": pr.num_clips,
+        "zip": pr.last_zip_path,
+    }
