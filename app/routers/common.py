@@ -1,34 +1,42 @@
 from __future__ import annotations
 
 import subprocess
-from fastapi import APIRouter, UploadFile, HTTPException, File
-from fastapi.responses import FileResponse
 from pathlib import Path
+
 import pandas as pd
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from ..config import API_BASE, DATA_DIR
-from ..services.preview_cache import register_preview, cleanup_previews
+from ..schemas import ErrorResponse, FieldsResponse
 from ..services.api_client import discover_fields
+from ..services.preview_cache import cleanup_previews, register_preview
 
 router = APIRouter()
+
+ERROR_RESPONSES = {400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}}
 
 
 @router.get("/health")
 def health():
     try:
-        sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode().strip()
+        sha = (
+            subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
+            .decode()
+            .strip()
+        )
     except Exception:
         sha = "unknown"
     return {"ok": True, "version": sha}
 
 
-@router.get("/fields")
+@router.get("/fields", response_model=FieldsResponse, responses=ERROR_RESPONSES)
 def api_fields():
     fields, source, sample_size, err = discover_fields()
     payload = {
         "fields": fields,
         "api_base": API_BASE,
-        "source": source,            # 'direct' | 'fallback' | 'empty'
+        "source": source,  # 'direct' | 'fallback' | 'empty'
         "sample_size": sample_size,  # number of items inspected
     }
     if err:

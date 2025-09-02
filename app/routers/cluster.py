@@ -1,20 +1,23 @@
 from __future__ import annotations
 
-import json
 import uuid
 from typing import Optional
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Form, UploadFile, File, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from ..config import DATA_DIR, TITLE_COL_CANDIDATES, PROJECTION_DEFAULT
+from ..config import DATA_DIR, PROJECTION_DEFAULT, TITLE_COL_CANDIDATES
+from ..schemas import ClusterResponse, ErrorResponse
 from ..services.clustering import auto_kmeans, pca_2d, tsne_2d
 from ..services.embeddings import suggest_cluster_names  # reuse helper for naming
 
 router = APIRouter()
 
-@router.post("/cluster")
+ERROR_RESPONSES = {400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}}
+
+
+@router.post("/cluster", response_model=ClusterResponse, responses=ERROR_RESPONSES)
 async def run_cluster(
     existing_uid: Optional[str] = Form(None),
     k_choice: str = Form("auto"),
@@ -32,7 +35,9 @@ async def run_cluster(
             raise HTTPException(400, "Selected dataset not found.")
     else:
         if not dataset_file or not embedding_file:
-            raise HTTPException(400, "Provide dataset (.parquet) and embeddings (.npy).")
+            raise HTTPException(
+                400, "Provide dataset (.parquet) and embeddings (.npy)."
+            )
         uid = uuid.uuid4().hex[:8]
         df_path = DATA_DIR / f"upload_{uid}.parquet"
         emb_path = DATA_DIR / f"upload_{uid}.npy"
@@ -47,6 +52,7 @@ async def run_cluster(
     # Clustering
     if algo_choice == "dbscan":
         from sklearn.cluster import DBSCAN
+
         try:
             db = DBSCAN(eps=float(db_eps), min_samples=int(db_min_samples))
         except Exception:
@@ -60,6 +66,7 @@ async def run_cluster(
         else:
             from sklearn.cluster import KMeans
             from sklearn.metrics import silhouette_score
+
             try:
                 k = int(k_choice)
                 km = KMeans(n_clusters=k, n_init=10, random_state=42)
@@ -100,6 +107,9 @@ async def run_cluster(
             }
             for idx, row in df.iterrows()
         ],
-        "download": {"parquet": f"/api/download/{out_name}", "embeddings": f"/api/download/{emb_path.name}"},
+        "download": {
+            "parquet": f"/api/download/{out_name}",
+            "embeddings": f"/api/download/{emb_path.name}",
+        },
     }
     return payload

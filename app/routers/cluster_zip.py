@@ -3,16 +3,17 @@ from __future__ import annotations
 import io
 import json
 import zipfile
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
-import pandas as pd
-from fastapi import APIRouter, Form, UploadFile, File, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from ..services.clustering import project_points, kmeans_auto_or_k, dbscan_cluster
-from ..config import DATA_DIR
+from ..schemas import ClusterZipResponse, ErrorResponse
+from ..services.clustering import dbscan_cluster, kmeans_auto_or_k, project_points
 
 router = APIRouter()
+
+ERROR_RESPONSES = {400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}}
 
 
 def _read_npy_from_zip(zf: zipfile.ZipFile, name: str) -> np.ndarray:
@@ -32,7 +33,9 @@ def _read_lines_from_zip(zf: zipfile.ZipFile, name: str) -> List[Dict[str, Any]]
     return lines
 
 
-@router.post("/cluster/clips")
+@router.post(
+    "/cluster/clips", response_model=ClusterZipResponse, responses=ERROR_RESPONSES
+)
 async def cluster_clips(
     packages: List[UploadFile] = File(...),
     algo_choice: str = Form("kmeans"),  # kmeans|dbscan
@@ -61,7 +64,15 @@ async def cluster_clips(
             texts = [m.get("text") for m in meta] if meta else [None] * emb.shape[0]
 
             for i in range(emb.shape[0]):
-                rows.append({"pk": pk, "idx": i + 1, "title": titles[i], "text": texts[i], "vec": emb[i, :]})
+                rows.append(
+                    {
+                        "pk": pk,
+                        "idx": i + 1,
+                        "title": titles[i],
+                        "text": texts[i],
+                        "vec": emb[i, :],
+                    }
+                )
 
     if not rows:
         raise HTTPException(400, "No clips found in uploaded ZIPs.")
@@ -78,26 +89,30 @@ async def cluster_clips(
     proj = project_points(X, proj_choice)
     points = []
     for r, c, xy in zip(rows, labels, proj):
-        points.append({
-            "pk": r["pk"],
-            "clip_index": r["idx"],
-            "title": r["title"],
-            "cluster": int(c),
-            "x": float(xy[0]),
-            "y": float(xy[1]),
-        })
+        points.append(
+            {
+                "pk": r["pk"],
+                "clip_index": r["idx"],
+                "title": r["title"],
+                "cluster": int(c),
+                "x": float(xy[0]),
+                "y": float(xy[1]),
+            }
+        )
 
     meta = {"k": k, "silhouette": sil, "cluster_names": {}}
     if name_clusters and k > 0:
         # optional: name clusters using titles as exemplars
         try:
-            from ..services.embeddings import name_clusters_via_chat  # if you add later
+            pass  # if you add later
         except Exception:
             meta["cluster_names"] = {}
     return {"points": points, "meta": meta, "download": {}}
 
 
-@router.post("/cluster/emissions")
+@router.post(
+    "/cluster/emissions", response_model=ClusterZipResponse, responses=ERROR_RESPONSES
+)
 async def cluster_emissions(
     packages: List[UploadFile] = File(...),
     algo_choice: str = Form("kmeans"),
@@ -116,7 +131,9 @@ async def cluster_emissions(
             try:
                 emb = _read_npy_from_zip(zf, "emb_program.npy")
             except KeyError:
-                raise HTTPException(400, f"{p.filename} does not contain emb_program.npy")
+                raise HTTPException(
+                    400, f"{p.filename} does not contain emb_program.npy"
+                )
             program_meta = json.loads(zf.read("program.json").decode("utf-8"))
             pk = str(program_meta.get("pk_value"))
             rows.append({"pk": pk, "vec": emb})
@@ -136,7 +153,9 @@ async def cluster_emissions(
     proj = project_points(X, proj_choice)
     points = []
     for r, c, xy in zip(rows, labels, proj):
-        points.append({"pk": r["pk"], "cluster": int(c), "x": float(xy[0]), "y": float(xy[1])})
+        points.append(
+            {"pk": r["pk"], "cluster": int(c), "x": float(xy[0]), "y": float(xy[1])}
+        )
 
     meta = {"k": k, "silhouette": sil, "cluster_names": {}}
     return {"points": points, "meta": meta, "download": {}}
