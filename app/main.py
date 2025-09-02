@@ -4,7 +4,6 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import BASE_DIR
@@ -58,11 +57,11 @@ app.include_router(datasets_router, prefix="/api", tags=["datasets"])
 app.include_router(db_router, prefix="/api/db", tags=["db"])
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-
-
-@app.get("/", response_class=HTMLResponse)
-def index():
-    return FileResponse(str(BASE_DIR / "static" / "index.html"))
+app.mount(
+    "/",
+    StaticFiles(directory=str(BASE_DIR / "web" / "dist"), html=True),
+    name="web",
+)
 
 
 @app.on_event("startup")
