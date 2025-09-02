@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy import func
+from sqlalchemy import desc, func
 from sqlmodel import Session, delete, select
 
 from ..db import get_session
@@ -33,7 +33,7 @@ ERROR_RESPONSES = {400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}}
 # ---------- Projects ----------
 @router.get("/projects", response_model=ProjectsResponse, responses=ERROR_RESPONSES)
 def list_projects(session: Session = Depends(get_session)):
-    projects = session.exec(select(Project).order_by(Project.created_at.desc())).all()
+    projects = session.exec(select(Project).order_by(desc(Project.created_at))).all()
     rows = []
     for p in projects:
         n = session.exec(

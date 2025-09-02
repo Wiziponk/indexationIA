@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -40,7 +40,7 @@ async def cluster_clips(
     packages: List[UploadFile] = File(...),
     algo_choice: str = Form("kmeans"),  # kmeans|dbscan
     k_choice: str = Form("auto"),
-    proj_choice: str = Form("pca"),
+    proj_choice: Literal["pca", "tsne"] = Form("pca"),
     db_eps: float = Form(0.8),
     db_min_samples: int = Form(10),
     name_clusters: bool = Form(False),
@@ -59,9 +59,17 @@ async def cluster_clips(
             program_meta = json.loads(zf.read("program.json").decode("utf-8"))
             pk = str(program_meta.get("pk_value"))
 
-            meta = _read_lines_from_zip(zf, "clips_meta.jsonl")
-            titles = [m.get("title") for m in meta] if meta else [None] * emb.shape[0]
-            texts = [m.get("text") for m in meta] if meta else [None] * emb.shape[0]
+            clip_meta = _read_lines_from_zip(zf, "clips_meta.jsonl")
+            titles = (
+                [m.get("title") for m in clip_meta]
+                if clip_meta
+                else [None] * emb.shape[0]
+            )
+            texts = (
+                [m.get("text") for m in clip_meta]
+                if clip_meta
+                else [None] * emb.shape[0]
+            )
 
             for i in range(emb.shape[0]):
                 rows.append(
@@ -83,7 +91,7 @@ async def cluster_clips(
         labels, k, sil = kmeans_auto_or_k(X, k_choice)
     else:
         labels = dbscan_cluster(X, eps=db_eps, min_samples=db_min_samples)
-        k = int(len(set([l for l in labels if l != -1])))
+        k = int(len({lab for lab in labels if lab != -1}))
         sil = -1.0
 
     proj = project_points(X, proj_choice)
@@ -117,7 +125,7 @@ async def cluster_emissions(
     packages: List[UploadFile] = File(...),
     algo_choice: str = Form("kmeans"),
     k_choice: str = Form("auto"),
-    proj_choice: str = Form("pca"),
+    proj_choice: Literal["pca", "tsne"] = Form("pca"),
     db_eps: float = Form(0.8),
     db_min_samples: int = Form(10),
     name_clusters: bool = Form(False),
@@ -147,7 +155,7 @@ async def cluster_emissions(
         labels, k, sil = kmeans_auto_or_k(X, k_choice)
     else:
         labels = dbscan_cluster(X, eps=db_eps, min_samples=db_min_samples)
-        k = int(len(set([l for l in labels if l != -1])))
+        k = int(len({lab for lab in labels if lab != -1}))
         sil = -1.0
 
     proj = project_points(X, proj_choice)

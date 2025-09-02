@@ -1,26 +1,33 @@
 from __future__ import annotations
 
 import json
-from typing import Iterable, List, Dict
+from typing import Dict, Iterable, List
 
-import numpy as np
-from openai import OpenAI, APIError, APITimeoutError, RateLimitError
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+from openai import APIError, APITimeoutError, OpenAI, RateLimitError
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
-from ..config import EMBED_MODEL, EMBED_BATCH_SIZE, MAX_TEXT_CHARS
+from ..config import EMBED_BATCH_SIZE, EMBED_MODEL, MAX_TEXT_CHARS
 from .utils import get_nested_value
 
 _client: OpenAI | None = None
+
 
 def get_client() -> OpenAI:
     global _client
     if _client is None:
         import os
+
         key = os.getenv("OPENAI_API_KEY")
         if not key:
             raise RuntimeError("OPENAI_API_KEY is not set.")
         _client = OpenAI(api_key=key)
     return _client
+
 
 def build_text_from_fields(row: dict, fields: Iterable[str]) -> str:
     parts = []
@@ -34,6 +41,7 @@ def build_text_from_fields(row: dict, fields: Iterable[str]) -> str:
         txt = txt[:MAX_TEXT_CHARS]
     return txt
 
+
 @retry(
     reraise=True,
     retry=retry_if_exception_type((RateLimitError, APIError, APITimeoutError)),
@@ -43,20 +51,26 @@ def build_text_from_fields(row: dict, fields: Iterable[str]) -> str:
 def _embed_batch(batch: List[str], model: str):
     return get_client().embeddings.create(model=model, input=batch)
 
-async def batch_embed(texts: List[str], model: str = EMBED_MODEL, batch_size: int = EMBED_BATCH_SIZE) -> List[List[float]]:
+
+async def batch_embed(
+    texts: List[str], model: str = EMBED_MODEL, batch_size: int = EMBED_BATCH_SIZE
+) -> List[List[float]]:
     cleaned = [str(t or "").strip() for t in texts]
     cleaned = [t for t in cleaned if t]
     if not cleaned:
         return []
     out: List[List[float]] = []
     for i in range(0, len(cleaned), batch_size):
-        batch = cleaned[i:i+batch_size]
+        batch = cleaned[i : i + batch_size]
         resp = _embed_batch(batch, model)
         out.extend([d.embedding for d in resp.data])
     return out
 
-def suggest_cluster_names(df, title_col, cluster_col="_cluster", max_titles=5) -> Dict[int, str]:
-    names = {}
+
+def suggest_cluster_names(
+    df, title_col, cluster_col="_cluster", max_titles=5
+) -> Dict[int, str]:
+    names: Dict[int, str] = {}
     try:
         client = get_client()
     except Exception:

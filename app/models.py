@@ -3,12 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-# --- SQLModel models (for Projects/Programs/Clips) ---
-from sqlmodel import SQLModel, Field, Column
 from sqlalchemy import JSON
 
+# --- SQLModel models (for Projects/Programs/Clips) ---
+from sqlmodel import Column, Field, SQLModel
 
-class Dataset(SQLModel, table=True):
+
+class Dataset(SQLModel, table=True):  # type: ignore[call-arg]
     uid: str = Field(primary_key=True)
     raw_path: str
     emb_path: str
@@ -17,7 +18,8 @@ class Dataset(SQLModel, table=True):
     # store the original config used to create the dataset
     config: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
-class Project(SQLModel, table=True):
+
+class Project(SQLModel, table=True):  # type: ignore[call-arg]
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -28,10 +30,11 @@ class Project(SQLModel, table=True):
     keep_ratio: float = 0.6
     with_titles: bool = True
     brief: Optional[str] = None
-    mode: str = "api"           # "api" | "excel"
+    mode: str = "api"  # "api" | "excel"
     excel_id_col: Optional[str] = None
 
-class Run(SQLModel, table=True):
+
+class Run(SQLModel, table=True):  # type: ignore[call-arg]
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="project.id")
     uid: str  # job uid (from app.services.jobs)
@@ -40,7 +43,8 @@ class Run(SQLModel, table=True):
     note: Optional[str] = None
     master_zip_path: Optional[str] = None
 
-class Program(SQLModel, table=True):
+
+class Program(SQLModel, table=True):  # type: ignore[call-arg]
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="project.id")
     pk_value: str
@@ -51,7 +55,8 @@ class Program(SQLModel, table=True):
     num_clips: int = 0
     last_zip_path: Optional[str] = None
 
-class Clip(SQLModel, table=True):
+
+class Clip(SQLModel, table=True):  # type: ignore[call-arg]
     id: Optional[int] = Field(default=None, primary_key=True)
     program_id: int = Field(foreign_key="program.id")
     idx: int
@@ -62,9 +67,9 @@ class Clip(SQLModel, table=True):
     summary: Optional[str] = None
     text: Optional[str] = None
 
-class Artifact(SQLModel, table=True):
+
+class Artifact(SQLModel, table=True):  # type: ignore[call-arg]
     id: Optional[int] = Field(default=None, primary_key=True)
     run_id: int = Field(foreign_key="run.id")
     kind: str  # "zip" | "parquet" | "npy" etc.
     path: str
-

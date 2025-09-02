@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import desc
 from sqlmodel import Session, select
 
 from ..db import get_session
@@ -39,7 +40,7 @@ class DatasetUpdate(BaseModel):
 
 @router.get("/datasets", response_model=List[DatasetInfo], responses=ERROR_RESPONSES)
 def list_datasets(session: Session = Depends(get_session)):
-    rows = session.exec(select(Dataset).order_by(Dataset.created_at.desc())).all()
+    rows = session.exec(select(Dataset).order_by(desc(Dataset.created_at))).all()
     return [_ds_to_dict(d) for d in rows]
 
 
@@ -85,6 +86,8 @@ async def rerun_dataset(uid: str, session: Session = Depends(get_session)):
     cfg = ds.config or {}
     mode = cfg.get("mode", "api")
     primary_key = cfg.get("primary_key")
+    if not isinstance(primary_key, str):
+        raise HTTPException(400, "Config missing primary_key")
     embed_fields = cfg.get("embed_fields", [])
     if mode != "api":
         raise HTTPException(400, "Re-run only supported for API mode")
@@ -99,9 +102,6 @@ async def rerun_dataset(uid: str, session: Session = Depends(get_session)):
         df["_pk"] = df.apply(
             lambda r: get_nested_value(r.to_dict(), primary_key), axis=1
         )
-        pk_col = "_pk"
-    else:
-        pk_col = primary_key
     texts = [
         build_text_from_fields(row.to_dict(), embed_fields) for _, row in df.iterrows()
     ]

@@ -175,7 +175,7 @@ async def preview_one(
         transcript_text, keep_ratio=keep_ratio, with_titles=with_titles, brief=brief
     )
     clip_embs = await embed_clips(segments)
-    prog_emb = await program_embedding(program_row, primary_key, embed_fields, segments)
+    await program_embedding(program_row, primary_key, embed_fields, segments)
 
     # compact preview payload (truncate text)
     preview = []

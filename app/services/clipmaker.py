@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import asyncio
 import io
 import json
 import math
@@ -9,21 +8,17 @@ import re
 import zipfile
 from typing import Any, Dict, List, Tuple
 
-import numpy as np
-import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.feature_extraction import text
-from sklearn.preprocessing import normalize
-from scipy.signal import find_peaks
-
-import stopwordsiso as stopwordsiso
-
 import nltk
+import numpy as np
+import stopwordsiso as stopwordsiso
 from nltk.tokenize import sent_tokenize
+from scipy.signal import find_peaks
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import normalize
 
+from ..config import DATA_DIR, SEG_EMBED_MODEL, SEG_GEN_MODEL, get_openai_client
 from .embeddings import batch_embed, build_text_from_fields
 from .utils import get_nested_value
-from ..config import SEG_EMBED_MODEL, SEG_GEN_MODEL, get_openai_client, DATA_DIR
 
 # Ensure punkt (silent). If unavailable at runtime, we'll fall back to a regex splitter.
 try:
@@ -41,6 +36,7 @@ def _hhmmss_to_seconds(ts: str | None) -> int | None:
     h, m, s = [int(x) for x in ts.split(":")]
     return h * 3600 + m * 60 + s
 
+
 def _seconds_to_hhmmss(sec: int | None) -> str | None:
     if sec is None:
         return None
@@ -48,6 +44,7 @@ def _seconds_to_hhmmss(sec: int | None) -> str | None:
     m = int((sec % 3600) // 60)
     s = int(sec % 60)
     return f"{h:02d}:{m:02d}:{s:02d}"
+
 
 def _split_sentences(text: str, lang: str = "fr") -> List[str]:
     """Robust sentence split with offline fallback when NLTK models are missing."""
@@ -63,15 +60,19 @@ def _split_sentences(text: str, lang: str = "fr") -> List[str]:
     except Exception:
         return [text]
 
-def _sentence_windows(text: str, lang: str = "fr", win: int = 4) -> Tuple[List[str], List[Dict[str, Any]]]:
+
+def _sentence_windows(
+    text: str, lang: str = "fr", win: int = 4
+) -> Tuple[List[str], List[Dict[str, Any]]]:
     sents = _split_sentences(text, lang=lang)
     chunks, metas = [], []
     for i in range(0, len(sents), win):
-        chunk = " ".join(sents[i:i+win]).strip()
+        chunk = " ".join(sents[i : i + win]).strip()
         if chunk:
             chunks.append(chunk)
             metas.append({"start": None, "end": None})
     return chunks, metas
+
 
 async def _embed_norm(texts: List[str]) -> np.ndarray:
     res = batch_embed(texts, model=SEG_EMBED_MODEL)
@@ -82,7 +83,10 @@ async def _embed_norm(texts: List[str]) -> np.ndarray:
     arr = np.vstack([np.array(v, dtype=np.float32) for v in embs])
     return normalize(arr)
 
-def _detect_boundaries(emb: np.ndarray, prominence=0.15, distance=2, smooth=3) -> List[int]:
+
+def _detect_boundaries(
+    emb: np.ndarray, prominence=0.15, distance=2, smooth=3
+) -> List[int]:
     sim = np.sum(emb[:-1] * emb[1:], axis=1)
     change = 1 - sim
     if smooth > 1:
@@ -92,15 +96,18 @@ def _detect_boundaries(emb: np.ndarray, prominence=0.15, distance=2, smooth=3) -
     bounds = [0] + [int(p + 1) for p in peaks] + [emb.shape[0]]
     return sorted(set(bounds))
 
+
 def _fr_stopwords_or_none():
     try:
         import stopwordsiso as sio
+
         if sio.has_lang("fr"):
             # keep only strings, convert to list (sklearn requirement)
             return [w for w in sio.stopwords("fr") if isinstance(w, str)]
     except Exception:
         pass
     return None
+
 
 def _tfidf_specificity(texts: List[str], lang="fr") -> np.ndarray:
     sw = _fr_stopwords_or_none()
@@ -116,6 +123,7 @@ def _tfidf_specificity(texts: List[str], lang="fr") -> np.ndarray:
         scores.append(spec)
     return np.array(scores)
 
+
 async def _intra_coherence(texts: List[str], lang: str = "fr") -> np.ndarray:
     vals = []
     for t in texts:
@@ -127,7 +135,7 @@ async def _intra_coherence(texts: List[str], lang: str = "fr") -> np.ndarray:
             vals.append(0.0)
             continue
         # await the normalized sentence embeddings
-        E = await _embed_norm(sents)          # <-- await!
+        E = await _embed_norm(sents)  # <-- await!
         sim = E @ E.T
         m = (np.sum(sim) - len(sents)) / (len(sents) * (len(sents) - 1))
         vals.append(float(m))
@@ -138,6 +146,7 @@ def _robust_unit(x) -> np.ndarray:
     x = np.array(x, dtype=np.float32)
     zx = (x - np.median(x)) / (np.std(x) + 1e-9)
     return 1 / (1 + np.exp(-zx))
+
 
 def _summarize_fr(text: str) -> Tuple[str, str]:
     client = get_openai_client()
@@ -172,16 +181,23 @@ async def segment_text(
 ) -> List[Dict[str, Any]]:
     chunks, metas = _sentence_windows(text, lang=lang, win=4)
     if len(chunks) < 2:
-        base = {"start": None, "end": None, "text": text.strip(), "score": 1.0, "title": "Segment", "summary": ""}
+        base: Dict[str, Any] = {
+            "start": None,
+            "end": None,
+            "text": text.strip(),
+            "score": 1.0,
+            "title": "Segment",
+            "summary": "",
+        }
         if with_titles:
-            t, s = _summarize_fr(base["text"])
-            base["title"], base["summary"] = t, s
+            t, summary = _summarize_fr(base["text"])
+            base["title"], base["summary"] = t, summary
         return [base]
 
     E = await _embed_norm(chunks)  # ← await
     bounds = _detect_boundaries(E, prominence=0.15, distance=2, smooth=3)
-      
-    sections = []
+
+    sections: List[Dict[str, Any]] = []
     for i in range(len(bounds) - 1):
         a, b = bounds[i], bounds[i + 1]
         txt = " ".join(chunks[a:b]).strip()
@@ -189,9 +205,9 @@ async def segment_text(
         end = metas[b - 1].get("end") if (b - 1) < len(metas) else None
         sections.append({"a": a, "b": b, "text": txt, "start": start, "end": end})
 
-    texts = [s["text"] for s in sections]
+    texts: List[str] = [str(sec["text"]) for sec in sections]
     spec = _tfidf_specificity(texts, lang="french")
-    coh  = await _intra_coherence(texts, lang=lang)   # <-- await here
+    coh = await _intra_coherence(texts, lang=lang)
 
     # Topic entropy (lower is more focused)
     sw = _fr_stopwords_or_none()
@@ -215,16 +231,16 @@ async def segment_text(
     k = max(1, int(math.ceil(keep_ratio * len(sections))))
     keep_idx = np.argsort(score)[::-1][:k]
 
-    results = []
+    results: List[Dict[str, Any]] = []
     for i in sorted(keep_idx):
-        s = sections[i].copy()
-        s["score"] = float(score[i])
+        sec = sections[i].copy()
+        sec["score"] = float(score[i])
         if with_titles:
-            t, su = _summarize_fr(s["text"])
-            s["title"], s["summary"] = t, su
+            t, su = _summarize_fr(sec["text"])
+            sec["title"], sec["summary"] = t, su
         else:
-            s["title"], s["summary"] = "Segment", ""
-        results.append(s)
+            sec["title"], sec["summary"] = "Segment", ""
+        results.append(sec)
     return results
 
 
@@ -235,7 +251,12 @@ async def embed_clips(segments: List[Dict[str, Any]]) -> np.ndarray:
     return np.vstack([np.array(v, dtype=np.float32) for v in embs])
 
 
-async def program_embedding(program_row: Dict[str, Any], primary_key: str, embed_fields: List[str], segments: List[Dict[str, Any]]) -> np.ndarray:
+async def program_embedding(
+    program_row: Dict[str, Any],
+    primary_key: str,
+    embed_fields: List[str],
+    segments: List[Dict[str, Any]],
+) -> np.ndarray:
     base = build_text_from_fields(program_row, embed_fields)
     extra = []
     for s in segments[:6]:
@@ -245,8 +266,10 @@ async def program_embedding(program_row: Dict[str, Any], primary_key: str, embed
             extra.append(f"{t}. {su}".strip())
     text = base + ("\n\n" + "\n".join(extra) if extra else "")
     res = batch_embed([text], model=SEG_EMBED_MODEL)
-    vec = (await res)[0] if inspect.isawaitable(res) else res[0]
+    embs = await res if inspect.isawaitable(res) else res
+    vec = embs[0]
     return np.array(vec, dtype=np.float32)
+
 
 def make_zip_for_program(
     uid: str,
@@ -271,7 +294,9 @@ def make_zip_for_program(
             "pk_value": pk_value,
             "fields": {f: get_nested_value(program_row, f) for f in embed_fields},
         }
-        zf.writestr("program.json", json.dumps(program_doc, ensure_ascii=False, indent=2))
+        zf.writestr(
+            "program.json", json.dumps(program_doc, ensure_ascii=False, indent=2)
+        )
 
         readme = f"""IndexationIA — package for emission {pk_value}
 
@@ -284,25 +309,45 @@ Files:
 - emb_model.txt            : model identifiers used
 """
         zf.writestr("README.txt", readme)
-        zf.writestr("emb_model.txt", json.dumps(
-            {"clip_embed_model": SEG_EMBED_MODEL, "program_embed_model": SEG_EMBED_MODEL},
-            ensure_ascii=False
-        ))
+        zf.writestr(
+            "emb_model.txt",
+            json.dumps(
+                {
+                    "clip_embed_model": SEG_EMBED_MODEL,
+                    "program_embed_model": SEG_EMBED_MODEL,
+                },
+                ensure_ascii=False,
+            ),
+        )
 
         # clip metas + text files
         meta_buf = io.StringIO()
         for i, s in enumerate(segments, start=1):
-            meta_buf.write(json.dumps({
-                "index": i, "start": s.get("start"), "end": s.get("end"),
-                "score": s.get("score"), "title": s.get("title"),
-                "summary": s.get("summary"), "text": s.get("text")
-            }, ensure_ascii=False) + "\n")
+            meta_buf.write(
+                json.dumps(
+                    {
+                        "index": i,
+                        "start": s.get("start"),
+                        "end": s.get("end"),
+                        "score": s.get("score"),
+                        "title": s.get("title"),
+                        "summary": s.get("summary"),
+                        "text": s.get("text"),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
             header = f"{s.get('title','Segment')}\n{(s.get('summary') or '')}\n\n"
             zf.writestr(f"clips/clip_{i:04d}.txt", header + (s.get("text") or ""))
         zf.writestr("clips_meta.jsonl", meta_buf.getvalue())
 
         # ✅ write numpy arrays correctly (one pass, no duplicates)
-        buf = io.BytesIO(); np.save(buf, clip_embs.astype(np.float32, copy=False)); zf.writestr("emb_clips.npy", buf.getvalue())
-        buf = io.BytesIO(); np.save(buf, prog_emb.astype(np.float32, copy=False));  zf.writestr("emb_program.npy", buf.getvalue())
+        buf = io.BytesIO()
+        np.save(buf, clip_embs.astype(np.float32, copy=False))
+        zf.writestr("emb_clips.npy", buf.getvalue())
+        buf = io.BytesIO()
+        np.save(buf, prog_emb.astype(np.float32, copy=False))
+        zf.writestr("emb_program.npy", buf.getvalue())
 
     return str(zip_path)
