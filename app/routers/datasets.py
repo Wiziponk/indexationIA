@@ -19,13 +19,24 @@ from ..services.utils import get_nested_value
 Base.metadata.create_all(bind=engine)
 
 router = APIRouter()
+def _ds_to_dict(ds: Dataset) -> dict:
+    return {
+        "uid": ds.uid,
+        "raw_path": ds.raw_path,
+        "emb_path": ds.emb_path,
+        "created_at": ds.created_at.isoformat() if ds.created_at else None,
+        "label": ds.label,
+        "config": ds.config,
+    }
+
 
 class DatasetUpdate(BaseModel):
     label: Optional[str] = None
 
 @router.get("/datasets")
 def list_datasets(db: Session = Depends(get_db)):
-    return db.query(Dataset).order_by(Dataset.created_at.desc()).all()
+    rows = db.query(Dataset).order_by(Dataset.created_at.desc()).all()
+    return [_ds_to_dict(d) for d in rows]
 
 @router.put("/datasets/{uid}")
 def update_dataset(uid: str, payload: DatasetUpdate, db: Session = Depends(get_db)):
@@ -35,7 +46,7 @@ def update_dataset(uid: str, payload: DatasetUpdate, db: Session = Depends(get_d
     ds.label = payload.label
     db.commit()
     db.refresh(ds)
-    return ds
+    return _ds_to_dict(ds)
 
 @router.delete("/datasets/{uid}", status_code=204)
 def delete_dataset(uid: str, db: Session = Depends(get_db)):

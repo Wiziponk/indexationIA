@@ -5,53 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Indexation v3</title>
   <link rel="stylesheet" href="/static/styles.css" />
-  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer>
-async function loadDatasets() {
-  const table = document.getElementById('datasetsTable');
-  try {
-    const ds = await fetchJSON('/api/datasets');
-    if (!Array.isArray(ds) || !ds.length) { table.innerHTML = '<tr><td>No datasets</td></tr>'; return; }
-    let html = '<tr><th>UID</th><th>Label</th><th>Created</th><th></th></tr>';
-    for (const d of ds) {
-      const created = d.created_at ? new Date(d.created_at).toLocaleString() : '';
-      html += `<tr>
-        <td>${d.uid}</td>
-        <td><input value="${d.label || ''}" data-uid="${d.uid}" class="dsLabel"></td>
-        <td>${created}</td>
-        <td><button data-action="save" data-uid="${d.uid}" class="small">Save</button>
-            <button data-action="rerun" data-uid="${d.uid}">Re-run</button>
-            <button data-action="delete" data-uid="${d.uid}" class="secondary">Delete</button></td>
-      </tr>`;
-    }
-    table.innerHTML = html;
-  } catch (err) {
-    console.error(err);
-    table.innerHTML = '<tr><td>Error loading datasets</td></tr>';
-  }
-}
-
-document.getElementById('datasetsTable').addEventListener('click', async (ev) => {
-  const uid = ev.target.dataset.uid;
-  if (!uid) return;
-  if (ev.target.dataset.action === 'delete') {
-    if (!confirm('Delete dataset ' + uid + '?')) return;
-    await fetchJSON(`/api/datasets/${uid}`, {method:'DELETE'});
-    loadDatasets();
-  } else if (ev.target.dataset.action === 'rerun') {
-    const js = await fetchJSON(`/api/datasets/${uid}/rerun`, {method:'POST'});
-    alert('Re-run created dataset ' + js.uid);
-    loadDatasets();
-  } else if (ev.target.dataset.action === 'save') {
-    const input = document.querySelector(`input.dsLabel[data-uid="${uid}"]`);
-    const label = input ? input.value : '';
-    await fetchJSON(`/api/datasets/${uid}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({label})});
-    loadDatasets();
-  }
-});
-
-loadDatasets();
-
-</script>
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
   <style>
     /* On-screen debug drawer */
     #debugWrap { position: fixed; right: 12px; bottom: 12px; width: 380px; max-height: 40vh; z-index: 9999; }
@@ -156,8 +110,7 @@ loadDatasets();
 
         <div class="col-12">
           <button id="btnBatch">Produce ZIPs for all included emissions</button>
-          <span class="small" id="batchLinks"></span>
-          <div id="batchLinks">
+          <div id="batchLinks" class="small">
             <p id="batchStatus" style="margin:.5rem 0;color:#555"></p>
           </div>
         </div>
@@ -290,8 +243,8 @@ loadDatasets();
   </div>
 
 <script>
-const $ = (q) => document.querySelector(q);
 const $$ = (q) => Array.from(document.querySelectorAll(q));
+const $ = (q) => document.querySelector(q);
 
 // On-screen error capture
 (function wireDebug(){
