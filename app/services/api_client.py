@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import List, Dict, Any, Optional, Tuple, Set
-import requests
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+import requests  # type: ignore[import-untyped]
 
 from ..config import API_BASE, API_TOKEN, TIMEOUT, VERIFY_SSL
 
@@ -41,7 +42,9 @@ def fetch_all_programs() -> List[Dict[str, Any]]:
     return _extract_list(data)
 
 
-def _union_keys(items: List[Dict[str, Any]], max_items: int = 50) -> Tuple[List[str], int]:
+def _union_keys(
+    items: List[Dict[str, Any]], max_items: int = 50
+) -> Tuple[List[str], int]:
     """
     Union top-level keys + one-level dotted keys from up to max_items elements.
     """
@@ -71,6 +74,7 @@ def discover_fields() -> Tuple[List[str], str, int, Optional[str]]:
         return [], "empty", 0, "EDUC_API_BASE is not configured."
 
     # Try direct
+    last_err: Optional[str] = None
     try:
         data = _http_get(API_BASE).json()
         items = _extract_list(data)
@@ -84,8 +88,6 @@ def discover_fields() -> Tuple[List[str], str, int, Optional[str]]:
     except Exception as e:
         # fall through to fallback with reason
         last_err = f"Direct call failed: {e}"
-    else:
-        last_err = None
 
     # Fallback: use fetch_all_programs()
     try:
