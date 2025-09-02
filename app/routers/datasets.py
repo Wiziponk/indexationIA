@@ -7,16 +7,14 @@ import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlmodel import Session, select, SQLModel
+from sqlmodel import Session, select
 
-from ..db import get_session, engine
+from ..db import get_session
 from ..models import Dataset
 from ..services.api_client import fetch_all_programs
 from ..services.embeddings import batch_embed, build_text_from_fields
 from ..services.storage import save_dataset_files
 from ..services.utils import get_nested_value
-
-SQLModel.metadata.create_all(bind=engine)
 
 router = APIRouter()
 def _ds_to_dict(ds: Dataset) -> dict:
@@ -38,6 +36,14 @@ class DatasetUpdate(BaseModel):
 def list_datasets(session: Session = Depends(get_session)):
     rows = session.exec(select(Dataset).order_by(Dataset.created_at.desc())).all()
     return [_ds_to_dict(d) for d in rows]
+
+@router.get("/datasets/{uid}")
+def get_dataset(uid: str, session: Session = Depends(get_session)):
+    ds = session.get(Dataset, uid)
+    if not ds:
+        raise HTTPException(404, "Not found")
+    return _ds_to_dict(ds)
+
 
 
 @router.put("/datasets/{uid}")

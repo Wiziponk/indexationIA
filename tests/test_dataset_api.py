@@ -18,6 +18,17 @@ def test_list_datasets():
     assert r.status_code == 200
     assert any(d['uid'] == 'u1' for d in r.json())
 
+def test_get_dataset():
+    r = client.get('/api/datasets/u1')
+    assert r.status_code == 200
+    assert r.json()['uid'] == 'u1'
+
+
+def test_get_dataset_not_found():
+    r = client.get('/api/datasets/missing')
+    assert r.status_code == 404
+
+
 def test_update_dataset():
     r = client.put('/api/datasets/u1', json={'label': 'hello'})
     assert r.status_code == 200
