@@ -2,8 +2,10 @@ import { useState } from "react";
 import StepFields from "./StepFields";
 import StepScope from "./StepScope";
 import StepTranscripts from "./StepTranscripts";
+import Preview from "./Preview";
+import Batch from "./Batch";
 
-const STEPS = ["Fields", "Scope", "Transcripts"];
+const STEPS = ["Fields", "Scope", "Transcripts", "Preview", "Batch"];
 
 export default function Wizard() {
   const [step, setStep] = useState(0);
@@ -15,11 +17,25 @@ export default function Wizard() {
   const [excelToken, setExcelToken] = useState<string | null>(null);
   const [excelIdCol, setExcelIdCol] = useState<string | null>(null);
 
+  const [transcripts, setTranscripts] = useState<File[]>([]);
+  const [sampleIds, setSampleIds] = useState<string[]>([]);
+  const [sampleId, setSampleId] = useState<string>("");
+  const [prepared, setPrepared] = useState(false);
+  const [previewed, setPreviewed] = useState(false);
+
+  const [keepRatio, setKeepRatio] = useState(0.6);
+  const [brief, setBrief] = useState("");
+  const [withTitles, setWithTitles] = useState(true);
+
   const canNext =
     step === 0
       ? primaryKey !== "" && embedFields.length > 0
       : step === 1
       ? mode === "api" || (excelToken !== null && excelIdCol !== null)
+      : step === 2
+      ? prepared
+      : step === 3
+      ? previewed
       : false;
 
   return (
@@ -66,6 +82,49 @@ export default function Wizard() {
           mode={mode}
           excelToken={excelToken}
           excelIdCol={excelIdCol}
+          transcripts={transcripts}
+          setTranscripts={setTranscripts}
+          setSampleIds={setSampleIds}
+          setSampleId={setSampleId}
+          setPrepared={setPrepared}
+        />
+      )}
+
+      {step === 3 && (
+        <Preview
+          primaryKey={primaryKey}
+          embedFields={embedFields}
+          mode={mode}
+          excelToken={excelToken}
+          excelIdCol={excelIdCol}
+          transcripts={transcripts}
+          sampleIds={sampleIds}
+          sampleId={sampleId}
+          setSampleId={setSampleId}
+          keepRatio={keepRatio}
+          setKeepRatio={setKeepRatio}
+          brief={brief}
+          setBrief={setBrief}
+          withTitles={withTitles}
+          setWithTitles={setWithTitles}
+          setPreviewed={setPreviewed}
+        />
+      )}
+
+      {step === 4 && (
+        <Batch
+          primaryKey={primaryKey}
+          embedFields={embedFields}
+          mode={mode}
+          excelToken={excelToken}
+          excelIdCol={excelIdCol}
+          transcripts={transcripts}
+          keepRatio={keepRatio}
+          setKeepRatio={setKeepRatio}
+          brief={brief}
+          setBrief={setBrief}
+          withTitles={withTitles}
+          setWithTitles={setWithTitles}
         />
       )}
 
@@ -77,7 +136,7 @@ export default function Wizard() {
         >
           Back
         </button>
-        {step < 2 && (
+        {step < 4 && (
           <button
             className="rounded bg-primary px-3 py-1 text-primary-foreground disabled:opacity-50"
             disabled={!canNext}

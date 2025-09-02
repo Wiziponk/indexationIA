@@ -15,6 +15,11 @@ type Props = {
   mode: "api" | "excel";
   excelToken: string | null;
   excelIdCol: string | null;
+  transcripts: File[];
+  setTranscripts: (f: File[]) => void;
+  setSampleIds: (ids: string[]) => void;
+  setSampleId: (id: string) => void;
+  setPrepared: (ok: boolean) => void;
 };
 
 export default function StepTranscripts({
@@ -23,8 +28,12 @@ export default function StepTranscripts({
   mode,
   excelToken,
   excelIdCol,
+  transcripts,
+  setTranscripts,
+  setSampleIds,
+  setSampleId,
+  setPrepared,
 }: Props) {
-  const [files, setFiles] = useState<File[]>([]);
   const [result, setResult] = useState<PrepareResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -38,9 +47,10 @@ export default function StepTranscripts({
       form.append("excel_token", excelToken);
       if (excelIdCol) form.append("excel_id_col", excelIdCol);
     }
-    files.forEach((f) => form.append("transcripts", f));
+    transcripts.forEach((f) => form.append("transcripts", f));
     setLoading(true);
     setError(null);
+    setPrepared(false);
     try {
       const res = await fetch(`${API_BASE}/segment/prepare`, {
         method: "POST",
@@ -49,6 +59,9 @@ export default function StepTranscripts({
       if (!res.ok) throw new Error(await res.text());
       const json = (await res.json()) as PrepareResponse;
       setResult(json);
+      setSampleIds(json.sample_ids);
+      setSampleId(json.sample_ids[0] || "");
+      setPrepared(true);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -63,12 +76,17 @@ export default function StepTranscripts({
           type="file"
           accept=".docx"
           multiple
-          onChange={(e) => setFiles(Array.from(e.target.files || []))}
+          onChange={(e) => {
+            setTranscripts(Array.from(e.target.files || []));
+            setSampleIds([]);
+            setSampleId("");
+            setPrepared(false);
+          }}
         />
       </div>
       <button
         className="rounded bg-primary px-3 py-1 text-primary-foreground disabled:opacity-50"
-        disabled={files.length === 0 || loading}
+        disabled={transcripts.length === 0 || loading}
         onClick={onPrepare}
       >
         {loading ? "Preparing…" : "Prepare"}
@@ -79,16 +97,6 @@ export default function StepTranscripts({
           <p>
             Included: {result.count_included} • Excluded: {result.count_excluded}
           </p>
-          <div>
-            <label className="mr-2">Sample IDs:</label>
-            <select className="border p-1">
-              {result.sample_ids.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
       )}
     </div>
