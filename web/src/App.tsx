@@ -4,6 +4,7 @@ import Wizard from "./pages/Wizard";
 import Clustering from "./pages/Clustering";
 import Library from "./pages/Library";
 import Settings from "./pages/Settings";
+import Datasets from "./pages/Datasets";
 
 export default function App() {
   const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -16,6 +17,11 @@ export default function App() {
           <li>
             <NavLink to="/" end className={linkClass}>
               Home
+            </NavLink>
+          </li>
+          <li>
+            <NavLink to="/datasets" className={linkClass}>
+              Datasets
             </NavLink>
           </li>
           <li>
@@ -43,6 +49,7 @@ export default function App() {
       <main className="flex-1 p-4">
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/datasets" element={<Datasets />} />
           <Route path="/wizard" element={<Wizard />} />
           <Route path="/clustering" element={<Clustering />} />
           <Route path="/library" element={<Library />} />
