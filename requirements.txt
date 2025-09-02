@@ -14,7 +14,6 @@ python-docx
 pyarrow
 openpyxl
 xlrd<2.0
-python-dotenv
 stopwordsiso
 sqlmodel>=0.0.18
 sqlalchemy>=2.0

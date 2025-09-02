@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import uuid
 from typing import Optional
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlmodel import Session, select, delete
+from sqlalchemy import func
+
 
 from ..db import get_session, engine
 from ..models import Project, Program, Clip, Run, Artifact
@@ -21,7 +24,10 @@ def list_projects(session: Session = Depends(get_session)):
     projects = session.exec(select(Project).order_by(Project.created_at.desc())).all()
     rows = []
     for p in projects:
-        n = session.exec(select(Program).where(Program.project_id == p.id)).count()
+        n = session.exec(
+            select(func.count()).select_from(Program).where(Program.project_id == p.id)
+        ).scalar_one()[0]
+
         rows.append({
             "id": p.id, "name": p.name, "created_at": p.created_at.isoformat(),
             "primary_key": p.primary_key, "embed_fields": p.embed_fields,
