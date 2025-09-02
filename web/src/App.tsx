@@ -1,6 +1,6 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 import Home from "./pages/Home";
-import DatasetWizard from "./pages/DatasetWizard";
+import Wizard from "./pages/Wizard";
 import Clustering from "./pages/Clustering";
 import Library from "./pages/Library";
 import Settings from "./pages/Settings";
@@ -43,7 +43,7 @@ export default function App() {
       <main className="flex-1 p-4">
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/wizard" element={<DatasetWizard />} />
+          <Route path="/wizard" element={<Wizard />} />
           <Route path="/clustering" element={<Clustering />} />
           <Route path="/library" element={<Library />} />
           <Route path="/settings" element={<Settings />} />
