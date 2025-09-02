@@ -1,4 +1,12 @@
 # Builder image
+FROM node:20-alpine AS web-builder
+
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ .
+RUN npm run build
+
 FROM python:3.11-slim AS builder
 
 WORKDIR /app
@@ -24,6 +32,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 COPY --from=builder /root/.local /usr/local
 COPY . /app
+COPY --from=web-builder /web/dist /app/web/dist
 
 EXPOSE 5000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5000"]
