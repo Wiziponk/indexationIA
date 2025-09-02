@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { useToast } from "../components/Toasts";
+import DownloadLink from "../components/DownloadLink";
 
 interface Project {
   id: number;
@@ -172,12 +173,7 @@ export default function Library() {
                   {detail.program.pk_value} ({detail.program.num_clips} clips)
                 </h2>
                 {detail.program.last_zip_path && (
-                  <a
-                    href={detail.program.last_zip_path}
-                    className="text-sm text-blue-600 underline"
-                  >
-                    Download ZIP
-                  </a>
+                  <DownloadLink href={detail.program.last_zip_path} />
                 )}
               </div>
 
