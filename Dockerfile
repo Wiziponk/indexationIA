@@ -5,7 +5,7 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ .
-RUN npm run build
+RUN npm run typecheck && npm run build
 
 FROM python:3.11-slim AS builder
 

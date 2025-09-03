@@ -1,6 +1,7 @@
 import { useEffect } from "react";
-import { API_BASE } from "../lib/api";
-import { useJobs, type JobStatus } from "../components/Jobs";
+import { useJobs } from "../components/Jobs";
+import { fetchJobStatus } from "../api/jobs";
+import type { StatusResponse } from "@/types/jobs";
 
 export default function useJobPolling(uid: string | null) {
   const { updateJob, removeJob, setDownloads } = useJobs();
@@ -11,15 +12,7 @@ export default function useJobPolling(uid: string | null) {
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const res = await fetch(`${API_BASE}/segment/status/${uid}`);
-        if (!res.ok) {
-          updateJob(uid, {
-            status: "error",
-            message: `HTTP ${res.status}`,
-          });
-          return;
-        }
-        const json = (await res.json()) as JobStatus;
+        const json: StatusResponse = await fetchJobStatus(uid);
         updateJob(uid, json);
         if (json.status === "running") {
           delay = Math.min(delay * 1.5, 10000);

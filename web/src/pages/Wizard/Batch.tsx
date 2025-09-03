@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { API_BASE } from "../../lib/api";
 import { useJobs } from "../../components/Jobs";
+import type { JobEntry } from "@/types/jobs";
 
 interface Props {
   primaryKey: string;
@@ -35,7 +36,7 @@ export default function Batch({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { addJob, jobs } = useJobs();
-  const job = jobs.find((j) => j.uid === uid) || null;
+  const job: JobEntry | null = jobs.find((j) => j.uid === uid) || null;
   const [completed, setCompleted] = useState(false);
 
   useEffect(() => {
@@ -115,7 +116,15 @@ export default function Batch({
       {job && (
         <p>
           Status: {job.status}
-          {job.note ? ` – ${job.note}` : ""}
+          {job.status === "running" &&
+          "progress" in job &&
+          "total" in job &&
+          job.progress !== undefined &&
+          job.total !== undefined
+            ? ` – ${job.progress}/${job.total}`
+            : job.note
+            ? ` – ${job.note}`
+            : ""}
         </p>
       )}
       {completed && <p>Batch completed. See Downloads panel.</p>}
