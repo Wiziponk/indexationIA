@@ -16,11 +16,12 @@ from ..db import engine
 from ..models import Artifact, Clip, Program, Project, Run
 from ..schemas import (
     BatchLaunchResponse,
+    BatchResult,
     ErrorResponse,
-    JobStatusResponse,
     NamedSegmentsResponse,
     SegmentPrepareResponse,
     SegmentPreviewResponse,
+    StatusResponse,
 )
 from ..services.api_client import fetch_all_programs
 from ..services.clipmaker import (
@@ -286,7 +287,6 @@ async def batch_zip(
         df = df.head(limit)
 
     uid = new_job()
-    set_status(uid, "queued")
     # 🔑 Launch in a real background thread (pass transcript names too + project info)
     _start_batch_thread(
         uid,
@@ -304,7 +304,7 @@ async def batch_zip(
         project_name,
     )
     # respond immediately; front-end will poll /segment/status/{uid}
-    return {"uid": uid, "status": "queued"}
+    return {"uid": uid, "status": "running"}
 
 
 async def _run_batch_async(
@@ -324,7 +324,7 @@ async def _run_batch_async(
 ):
     try:
         total = len(df)
-        set_status(uid, "running", f"starting… 0/{total}")
+        set_status(uid, "running", progress=0, total=total)
         out_dir = DATA_DIR / "zips" / uid
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -355,7 +355,7 @@ async def _run_batch_async(
             pk_value = str(row[pk_col])
             tx = t_map.get(pk_value, "").strip()
             if not tx:
-                set_status(uid, "running", f"skip (no transcript) {i}/{total}")
+                set_status(uid, "running", progress=i, total=total)
                 await asyncio.sleep(0)
                 continue
             segs = await segment_text(
@@ -407,7 +407,7 @@ async def _run_batch_async(
                         )
                     )
                 ses.commit()
-            set_status(uid, "running", f"processed {i}/{total}")
+            set_status(uid, "running", progress=i, total=total)
             await asyncio.sleep(0)  # tiny yield back to loop
 
         master_path = DATA_DIR / "zips" / f"{uid}.zip"
@@ -440,13 +440,19 @@ async def _run_batch_async(
             uid,
             {
                 "uid": uid,
-                "count": len(zip_paths),
+                "count": len(manifest),
                 "master_zip": f"/api/download/zips/{master_path.name}",
-                "zips": [f"/api/download/zips/{uid}/{Path(p).name}" for p in zip_paths],
+                "zips": [
+                    {
+                        "programme_id": m["pk"],
+                        "path": f"/api/download/zips/{uid}/{m['zip']}",
+                    }
+                    for m in manifest
+                ],
             },
         )
     except Exception as e:
-        set_status(uid, "error", str(e))
+        set_status(uid, "error", message=str(e))
 
 
 def _start_batch_thread(
@@ -489,7 +495,26 @@ def _start_batch_thread(
 
 
 @router.get(
-    "/segment/status/{uid}", response_model=JobStatusResponse, responses=ERROR_RESPONSES
+    "/segment/status/{uid}",
+    response_model=StatusResponse,
+    response_model_exclude_none=True,
+    responses=ERROR_RESPONSES,
 )
 async def batch_status(uid: str):
-    return get_job(uid)
+    job = get_job(uid)
+    if not job:
+        return StatusResponse(status="not_found", message="No job with this uid")
+    state = job.get("state")
+    if state == "running":
+        return StatusResponse(
+            status="running",
+            progress=job.get("progress"),
+            total=job.get("total"),
+        )
+    if state == "error":
+        return StatusResponse(status="error", message=job.get("message"))
+    if state == "done":
+        return StatusResponse(
+            status="done", result=BatchResult(**job.get("result", {}))
+        )
+    return StatusResponse(status="not_found", message="No job with this uid")

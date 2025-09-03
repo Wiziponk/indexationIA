@@ -25,3 +25,18 @@ Open http://localhost:5000 and use the UI.
 ## Notes
 - Parquet requires `pyarrow` (already in requirements).
 - For large datasets, embedding is batched with retry/backoff.
+
+## Status API contract
+
+The `/api/segment/status/{uid}` endpoint reports long-running batch jobs.
+It returns one of four states:
+
+```json
+{"status": "running", "progress": 3, "total": 10}
+{"status": "done", "result": {"uid": "abcd", "count": 10, "master_zip": "/api/download/zips/abcd.zip", "zips": [{"programme_id": "p1", "path": "/api/download/zips/abcd/p1.zip"}]}}
+{"status": "error", "message": "something went wrong"}
+{"status": "not_found", "message": "No job with this uid"}
+```
+
+Clients should handle each state accordingly and avoid assuming `result` exists
+unless `status` is `"done"`.

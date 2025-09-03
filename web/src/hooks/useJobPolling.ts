@@ -7,17 +7,32 @@ export default function useJobPolling(uid: string | null) {
 
   useEffect(() => {
     if (!uid) return;
-    const interval = setInterval(async () => {
-      const res = await fetch(`${API_BASE}/segment/status/${uid}`);
-      if (!res.ok) return;
-      const json = (await res.json()) as JobStatus;
-      updateJob(uid, json);
-      if (json.status === "done") {
-        clearInterval(interval);
-        removeJob(uid);
-        if (json.result) setDownloads(json.result);
+    let delay = 1000;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/segment/status/${uid}`);
+        if (!res.ok) {
+          updateJob(uid, {
+            status: "error",
+            message: `HTTP ${res.status}`,
+          });
+          return;
+        }
+        const json = (await res.json()) as JobStatus;
+        updateJob(uid, json);
+        if (json.status === "running") {
+          delay = Math.min(delay * 1.5, 10000);
+          timer = setTimeout(poll, delay);
+        } else if (json.status === "done") {
+          removeJob(uid);
+          setDownloads(json.result);
+        }
+      } catch (e) {
+        updateJob(uid, { status: "error", message: String(e) });
       }
-    }, 1000);
-    return () => clearInterval(interval);
+    };
+    poll();
+    return () => clearTimeout(timer);
   }, [uid, updateJob, removeJob, setDownloads]);
 }
