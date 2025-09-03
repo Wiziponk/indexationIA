@@ -7,18 +7,19 @@ import {
 import DownloadLink from "./DownloadLink";
 import useJobPolling from "../hooks/useJobPolling";
 
-export interface SegmentBatchResult {
+export type ZipInfo = { programme_id: string; path: string };
+export type BatchResult = {
   uid: string;
   count: number;
   master_zip: string;
-  zips: string[];
-}
+  zips: ZipInfo[];
+};
 
-export interface JobStatus {
-  status: string;
-  note?: string;
-  result?: SegmentBatchResult;
-}
+export type JobStatus =
+  | { status: "running"; progress?: number; total?: number; message?: string }
+  | { status: "error"; message: string }
+  | { status: "not_found"; message: string }
+  | { status: "done"; result: BatchResult };
 
 interface JobEntry extends JobStatus {
   uid: string;
@@ -29,7 +30,7 @@ interface JobsContextValue {
   addJob: (uid: string) => void;
   updateJob: (uid: string, job: JobStatus) => void;
   removeJob: (uid: string) => void;
-  setDownloads: (res: SegmentBatchResult) => void;
+  setDownloads: (res: BatchResult) => void;
 }
 
 const JobsContext = createContext<JobsContextValue>({
@@ -46,10 +47,10 @@ export function useJobs() {
 
 export function JobsProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<JobEntry[]>([]);
-  const [downloads, setDownloads] = useState<SegmentBatchResult | null>(null);
+  const [downloads, setDownloads] = useState<BatchResult | null>(null);
 
   const addJob = (uid: string) =>
-    setJobs((cur) => [...cur, { uid, status: "pending" }]);
+    setJobs((cur) => [...cur, { uid, status: "running" }]);
 
   const updateJob = (uid: string, job: JobStatus) =>
     setJobs((cur) => cur.map((j) => (j.uid === uid ? { ...j, ...job } : j)));
@@ -87,7 +88,11 @@ function JobsDrawer({ jobs }: { jobs: JobEntry[] }) {
             {jobs.map((j) => (
               <li key={j.uid}>
                 {j.status}
-                {j.note ? ` – ${j.note}` : ""}
+                {j.status === "running" && j.progress !== undefined
+                  ? ` – ${j.progress}/${j.total}`
+                  : j.message
+                  ? ` – ${j.message}`
+                  : ""}
               </li>
             ))}
           </ul>
@@ -102,7 +107,7 @@ function JobWatcher({ uid }: { uid: string }) {
   return null;
 }
 
-function DownloadsPanel({ result }: { result: SegmentBatchResult }) {
+function DownloadsPanel({ result }: { result: BatchResult }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="fixed bottom-4 right-4 space-y-2 text-sm">
@@ -119,8 +124,8 @@ function DownloadsPanel({ result }: { result: SegmentBatchResult }) {
           </div>
           <ul className="list-disc pl-4">
             {result.zips.map((z) => (
-              <li key={z}>
-                <DownloadLink href={z} />
+              <li key={z.path}>
+                <DownloadLink href={z.path} />
               </li>
             ))}
           </ul>

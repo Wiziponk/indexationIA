@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -49,17 +49,24 @@ class BatchLaunchResponse(BaseModel):
     status: str
 
 
-class SegmentBatchResult(BaseModel):
+class ZipInfo(BaseModel):
+    programme_id: str
+    path: str
+
+
+class BatchResult(BaseModel):
     uid: str
     count: int
     master_zip: str
-    zips: List[str]
+    zips: List[ZipInfo]
 
 
-class JobStatusResponse(BaseModel):
-    status: str
-    note: Optional[str] = None
-    result: Optional[SegmentBatchResult] = None
+class StatusResponse(BaseModel):
+    status: Literal["running", "done", "error", "not_found"]
+    message: Optional[str] = None
+    progress: Optional[int] = None
+    total: Optional[int] = None
+    result: Optional[BatchResult] = None
 
 
 class ClusterMeta(BaseModel):

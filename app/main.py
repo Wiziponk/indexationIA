@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import BASE_DIR
@@ -46,6 +47,14 @@ async def log_errors(request: Request, call_next):
     except Exception:
         logger.exception("Unhandled error for %s %s", request.method, request.url)
         raise
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"status": "error", "message": exc.detail},
+    )
 
 
 app.include_router(common_router, prefix="/api", tags=["common"])

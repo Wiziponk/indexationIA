@@ -1,18 +1,42 @@
-import asyncio, uuid
-from pathlib import Path
+import uuid
 
-_jobs: dict[str, dict] = {}  # {uid: {"status": "pending|running|done|error", "note": str, "result": dict}}
+JOBS: dict[str, dict] = {}
 
-def new_job():
+
+def new_job() -> str:
+    """Create a new job entry with a running state."""
+
     uid = uuid.uuid4().hex[:8]
-    _jobs[uid] = {"status": "pending", "note": "", "result": {}}
+    JOBS[uid] = {"state": "running", "progress": 0, "total": 0}
     return uid
 
-def set_status(uid, status, note=""):
-    if uid in _jobs: _jobs[uid].update({"status": status, "note": note})
 
-def set_result(uid, payload):
-    if uid in _jobs: _jobs[uid].update({"status": "done", "result": payload})
+def set_status(
+    uid: str,
+    state: str,
+    *,
+    progress: int | None = None,
+    total: int | None = None,
+    message: str | None = None,
+) -> None:
+    """Update job state, overwriting previous values."""
 
-def get_job(uid):
-    return _jobs.get(uid, {"status": "unknown", "note": "no such job"})
+    if uid not in JOBS:
+        return
+    data: dict[str, object] = {"state": state}
+    if progress is not None:
+        data["progress"] = progress
+    if total is not None:
+        data["total"] = total
+    if message is not None:
+        data["message"] = message
+    JOBS[uid] = data
+
+
+def set_result(uid: str, payload: dict) -> None:
+    if uid in JOBS:
+        JOBS[uid] = {"state": "done", "result": payload}
+
+
+def get_job(uid: str) -> dict | None:
+    return JOBS.get(uid)
