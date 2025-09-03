@@ -16,6 +16,8 @@ export default function Wizard() {
   const [mode, setMode] = useState<"api" | "excel">("api");
   const [excelToken, setExcelToken] = useState<string | null>(null);
   const [excelIdCol, setExcelIdCol] = useState<string | null>(null);
+  const [excelColumns, setExcelColumns] = useState<string[]>([]);
+  const [excelFile, setExcelFile] = useState<string | null>(null);
 
   const [transcripts, setTranscripts] = useState<File[]>([]);
   const [sampleIds, setSampleIds] = useState<string[]>([]);
@@ -72,6 +74,10 @@ export default function Wizard() {
           setToken={setExcelToken}
           idCol={excelIdCol}
           setIdCol={setExcelIdCol}
+          columns={excelColumns}
+          setColumns={setExcelColumns}
+          fileName={excelFile}
+          setFileName={setExcelFile}
         />
       )}
 

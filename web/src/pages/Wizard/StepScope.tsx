@@ -14,6 +14,10 @@ type Props = {
   setToken: Dispatch<SetStateAction<string | null>>;
   idCol: string | null;
   setIdCol: Dispatch<SetStateAction<string | null>>;
+  columns: string[];
+  setColumns: Dispatch<SetStateAction<string[]>>;
+  fileName: string | null;
+  setFileName: Dispatch<SetStateAction<string | null>>;
 };
 
 export default function StepScope({
@@ -23,8 +27,11 @@ export default function StepScope({
   setToken,
   idCol,
   setIdCol,
+  columns,
+  setColumns,
+  fileName,
+  setFileName,
 }: Props) {
-  const [columns, setColumns] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -44,6 +51,7 @@ export default function StepScope({
       const json = (await res.json()) as UploadResponse;
       setToken(json.token);
       setColumns(json.columns);
+      setFileName(file.name);
       if (json.columns.length === 1) setIdCol(json.columns[0]);
     } catch (err) {
       setError((err as Error).message);
@@ -82,6 +90,7 @@ export default function StepScope({
       {mode === "excel" && (
         <div className="space-y-2">
           <input type="file" accept=".csv,.xlsx,.xls" onChange={onFile} />
+          {fileName && <p>Selected: {fileName}</p>}
           {uploading && <p>Uploading…</p>}
           {error && <p className="text-red-600">{error}</p>}
           {token && (

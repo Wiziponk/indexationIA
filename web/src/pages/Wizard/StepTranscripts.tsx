@@ -83,6 +83,13 @@ export default function StepTranscripts({
             setPrepared(false);
           }}
         />
+        {transcripts.length > 0 && (
+          <ul className="mt-2 list-disc pl-5">
+            {transcripts.map((f, idx) => (
+              <li key={f.name + idx}>{f.name}</li>
+            ))}
+          </ul>
+        )}
       </div>
       <button
         className="rounded bg-primary px-3 py-1 text-primary-foreground disabled:opacity-50"
