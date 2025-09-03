@@ -6,29 +6,12 @@ import {
 } from "react";
 import DownloadLink from "./DownloadLink";
 import useJobPolling from "../hooks/useJobPolling";
-
-export type ZipInfo = { programme_id: string; path: string };
-export type BatchResult = {
-  uid: string;
-  count: number;
-  master_zip: string;
-  zips: ZipInfo[];
-};
-
-export type JobStatus =
-  | { status: "running"; progress?: number; total?: number; message?: string }
-  | { status: "error"; message: string }
-  | { status: "not_found"; message: string }
-  | { status: "done"; result: BatchResult };
-
-interface JobEntry extends JobStatus {
-  uid: string;
-}
+import type { BatchResult, JobEntry, StatusResponse } from "@/types/jobs";
 
 interface JobsContextValue {
   jobs: JobEntry[];
   addJob: (uid: string) => void;
-  updateJob: (uid: string, job: JobStatus) => void;
+  updateJob: (uid: string, job: StatusResponse) => void;
   removeJob: (uid: string) => void;
   setDownloads: (res: BatchResult) => void;
 }
@@ -52,8 +35,10 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   const addJob = (uid: string) =>
     setJobs((cur) => [...cur, { uid, status: "running" }]);
 
-  const updateJob = (uid: string, job: JobStatus) =>
-    setJobs((cur) => cur.map((j) => (j.uid === uid ? { ...j, ...job } : j)));
+  const updateJob = (uid: string, job: StatusResponse) =>
+    setJobs((cur) =>
+      cur.map((j) => (j.uid === uid ? { ...j, ...job, updatedAt: Date.now() } : j)),
+    );
 
   const removeJob = (uid: string) =>
     setJobs((cur) => cur.filter((j) => j.uid !== uid));
@@ -88,9 +73,10 @@ function JobsDrawer({ jobs }: { jobs: JobEntry[] }) {
             {jobs.map((j) => (
               <li key={j.uid}>
                 {j.status}
-                {j.status === "running" && j.progress !== undefined
+                {j.status === "running" && "progress" in j && "total" in j &&
+                j.progress !== undefined && j.total !== undefined
                   ? ` – ${j.progress}/${j.total}`
-                  : j.message
+                  : "message" in j && j.message
                   ? ` – ${j.message}`
                   : ""}
               </li>
